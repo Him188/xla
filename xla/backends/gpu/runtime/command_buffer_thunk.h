@@ -57,7 +57,7 @@ class CommandBufferThunk : public Thunk {
 
   void ForAllThunks(absl::FunctionRef<void(const Thunk*)> fn) const override;
 
- private:
+ public:
   // Command buffer instantiated on a `se::StreamExecutor` instance, and
   // auxiliary state required for efficient command buffer updates.
   struct ExecutorCommandBuffer {
