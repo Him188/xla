@@ -8,13 +8,13 @@
 namespace xla {
 namespace {
 
-TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) { // We don't observe data race from this
+TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
   std::string dumpDir = ::testing::TempDir() + "/xla_dump";
   std::filesystem::create_directory(dumpDir);
   xla_test_util::SetXlaDumpFlags(dumpDir);
 
   using namespace xla;
-  auto test_fun = [] {
+  auto test_fun = [](int round_number) {
     // 1. Build a simple HLO computation graph using XlaBuilder.
     XlaBuilder builder("test_graph");
     // Define shapes for some example operands
@@ -30,7 +30,6 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) { // We don't observe dat
     XlaOp B = Parameter(&builder, 1, matShape, "B");
     XlaOp C = Parameter(&builder, 2, vecShape, "C");
     XlaOp D = Parameter(&builder, 3, vecShape, "D");
-    // Define operations: matmul and elementwise addition (independent)
 
     XlaOp a_dot_b = Dot(A, B);
 
@@ -40,25 +39,22 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) { // We don't observe dat
       heavy = heavy - a_dot_b;
     }
 
-    XlaOp matmul = heavy;                                                               // Matrix multiplication A*B
-    XlaOp elemadd = Add(C, D);                                                          // Elementwise add of vectors C+D
-    XlaOp output = Tuple(&builder, {matmul, Dot(A, B), Dot(A, B), Dot(A, B), elemadd}); // Bundle results (to have single output)
-    // Build the computation (HLO module)
+    XlaOp matmul = heavy;
+    XlaOp elemadd = Add(C, D);
+    XlaOp output = Tuple(&builder, {matmul, Dot(A, B), Dot(A, B), Dot(A, B), elemadd});
     XlaComputation computation = builder.Build(output).value();
 
-    // 2. Set compilation options, including debug options for multi-stream.
-
+    // Set debug options
     CompileOptions compile_options;
-
     ExecutableBuildOptions &build_opts = compile_options.executable_build_options;
-
     build_opts.set_device_ordinal(0); // target GPU 0
+
     DebugOptions &debug_opts = *build_opts.mutable_debug_options();
     build_opts.mutable_debug_options()->add_xla_disable_hlo_passes();
     build_opts.mutable_debug_options()->set_xla_gpu_enable_latency_hiding_scheduler(true);
     debug_opts.set_xla_gpu_multi_streamed_windowed_einsum(true);
     debug_opts.set_xla_cpu_use_thunk_runtime(true);
-    debug_opts.set_xla_gpu_async_dot(true);
+    debug_opts.set_xla_gpu_async_dot(true); // !!
     debug_opts.set_xla_dump_hlo_as_html(true);
 
     debug_opts.clear_xla_gpu_enable_command_buffer();
@@ -71,41 +67,9 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) { // We don't observe dat
     std::unique_ptr<PjRtClient> pjrt_client = std::move(client_or.value());
     auto &pjrt_stream_client = *dynamic_cast<PjRtStreamExecutorClient *>(pjrt_client.get());
 
-    auto &client = *pjrt_stream_client.client();
-
-    // // 8. Compile the XLA computation.
-    // xla::CompileOptions compile_opts;
-    // auto exec_or = pjrt_client->Compile(computation, compile_opts);
-    // ASSERT_TRUE(exec_or.ok());
-    // std::unique_ptr<xla::PjRtLoadedExecutable> executable =
-    //     std::move(exec_or.value());
-
-    // // 9. Execute the compiled executable. No real arguments here since we
-    // used
-    // // constants.
-    // xla::ExecuteOptions exec_opts;
-    // auto outputs_or = executable->Execute({{}}, exec_opts);
-    // ASSERT_TRUE(outputs_or.ok());
-    // auto& outputs = outputs_or.value();
-    // ASSERT_EQ(outputs.size(), 1UL);
-    // ASSERT_EQ(outputs[0].size(), 1UL);
-
-    // TF_ASSERT_OK_AND_ASSIGN(auto client, GetStreamExecutorGpuClient({}));
-    // std::vector<const xla::Shape*> arg_layouts = {&matShape, &matShape,
-    // &vecShape, &vecShape}; TF_ASSERT_OK_AND_ASSIGN(auto
-    // local_executable_status, client.Compile(computation, arg_layouts,
-    // build_opts));
-    //
-    // std::unique_ptr<LocalExecutable> local_exec =
-    // std::move(local_executable_status[0]); Executable* executable =
-    // local_exec->executable();
-    //
-    // // 4. Cast to GpuExecutable to access GPU-specific details (thunks).
-    // auto* gpu_exec = dynamic_cast<gpu::GpuExecutable*>(executable);
-    // ASSERT_NE(gpu_exec, nullptr);
-
-    std::vector hostA(N * M, 1.0f);  // e.g. fill with 1.0
-    std::vector hostB(N * M, 1.01f); // fill with 2.0
+    // Create buffers for the input parameters
+    std::vector hostA(N * M, 1.0f);
+    std::vector hostB(N * M, 1.01f);
     std::vector hostC(V, 3.0f);
     std::vector hostD(V, 4.0f);
 
@@ -117,32 +81,24 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) { // We don't observe dat
     const std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> outputs =
         xla_test_util::compile_and_execute(pjrt_stream_client, computation, {{bufferA.get(), bufferB.get(), bufferC.get(), bufferD.get()}}, compile_options);
 
-    // std::vector<ExecutionInput> vec;
-    // vec.push_back({})
-    // auto execution_output = local_exec->Run(std::move(vec),
-    // run_opts).value(); auto device_memory_base =
-    // execution_output.Result().buffer({0});
-
-    // std::cout << "outputs.size=" << outputs.size() << " " <<
-    // "outputs[0].size=" << outputs[0].size() << std::endl;
-
+    // Print output for this round
     auto literal = xla_test_util::buffer_to_literal(outputs[0][0]).value();
     std::cout << "Shape: " << ShapeUtil::HumanString(literal->shape()) << std::endl;
     auto tuple = literal->DecomposeTuple();
     std::cout << "tuple size: " << tuple.size() << std::endl;
 
     constexpr auto expected = 1 + 2 + 2 * 100;
-    std::cout << "Value: " << tuple[0].Get<float>({0, 0}) << std::endl;
+    std::cout << "Round " << round_number << " Value: " << tuple[0].Get<float>({0, 0}) << std::endl;
     ASSERT_TRUE(std::abs(tuple[0].Get<float>({0, 0}) - 1.67047e+07) < 1e07);
   };
 
   for (int i = 0; i < 100; ++i) {
-    test_fun();
+    test_fun(i);
   }
-  xla_test_util::PrintIrDumps(dumpDir, {
-                                           xla_test_util::IRDumpKind::kHLO,
-                                           xla_test_util::IRDumpKind::kHTML,
-                                       });
+  // xla_test_util::PrintIrDumps(dumpDir, {
+  //                                          xla_test_util::IRDumpKind::kHLO,
+  //                                          xla_test_util::IRDumpKind::kHTML,
+  //                                      });
 }
 
 TEST(XlaCompilationTest, ExecuteOnMultpleStreamsWhile) {
