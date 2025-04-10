@@ -140,11 +140,12 @@ void xla_test_util::print_gpu_thunk_sequence(se::StreamExecutor *stream_executor
 
 void print_gpu_thunk_info(const LocalClient &client, gpu::GpuExecutable &gpu_exec) {
   const gpu::ThunkSequence &thunk_sequence = gpu_exec.GetThunk().thunks();
-  std::cout << "=== Thunk List (" << thunk_sequence.size() << ") ===" << std::endl;
+  std::cout << "\n=== Thunk List (" << thunk_sequence.size() << ") ===" << std::endl;
 
   int idx = 0;
   const auto executor = client.backend().stream_executor(0).value();
   print_gpu_thunk_sequence(executor, thunk_sequence, idx);
+  std::cout << "=== End of Thunk List ===\n" << std::endl;
 }
 
 std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> compile_and_execute(PjRtStreamExecutorClient &pjrt_client, const XlaComputation &computation,
