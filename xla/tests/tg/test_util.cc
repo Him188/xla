@@ -8,6 +8,8 @@
 namespace xla {
 namespace xla_test_util {
 
+const std::string kXlaLocalDumpDir = "/home/him188/CLionProjects/xla/dumps";
+
 void xla_test_util::SetXlaDumpFlags(const std::string &dump_dir) {
   // Mandatory directory setting
   std::string flags = "--xla_dump_to=" + dump_dir + " --xla_dump_hlo_as_text --xla_gpu_dump_llvmir";
@@ -44,17 +46,28 @@ void xla_test_util::PrintIrDumps(const std::string &dump_dir, const std::vector<
 
     auto need_kind = [&](const IRDumpKind kind) { return std::find(kinds.begin(), kinds.end(), kind) != kinds.end(); };
 
+    auto filename = entry.path().filename().string();
     if ((ends_with(path, ".txt") && need_kind(IRDumpKind::kHLO)) || (ends_with(path, ".mlir") && need_kind(IRDumpKind::kMLIR)) ||
-        (ends_with(path, ".ll") && need_kind(IRDumpKind::kLLVM)) || (ends_with(path, ".ptx") && need_kind(IRDumpKind::kPTX))) {
+        (ends_with(path, ".ll") && need_kind(IRDumpKind::kLLVM)) || (ends_with(path, ".ptx") && need_kind(IRDumpKind::kPTX)) ||
+        (ends_with(path, ".dot") && need_kind(IRDumpKind::kDOT))) {
       std::ifstream file(path);
       if (!file.is_open()) {
         continue;
       }
       std::stringstream buffer;
       buffer << file.rdbuf();
-      std::cout << "\n--- IR Dump: " << entry.path().filename().string() // just the file name
+      std::cout << "\n--- IR Dump: " << filename // just the file name
                 << " ---\n";
       std::cout << buffer.str() << std::endl;
+    }
+
+    if (ends_with(path, ".html") && need_kind(IRDumpKind::kHTML)) {
+      // Copy file to kXlaLocalDumpDir
+      std::string new_path = kXlaLocalDumpDir + "/" + filename;
+      std::filesystem::copy(path, new_path, std::filesystem::copy_options::overwrite_existing);
+      std::cout << "\n--- HTML Dump: " << filename // just the file name
+                << " ---\n";
+      std::cout << filename << std::endl;
     }
   }
 }
@@ -113,40 +126,37 @@ void xla_test_util::print_gpu_thunk_sequence(se::StreamExecutor *stream_executor
       auto waits = sync_thunk->wait_for_stream_id();
       std::cout << ", waits for stream  " << waits << "";
       std::cout << std::endl;
-    } else if (auto *sync_thunk = dynamic_cast<const gpu::WhileThunk *>(thunk)) {
+    } else if (auto *my_thunk = dynamic_cast<const gpu::WhileThunk *>(thunk)) {
       std::cout << std::endl;
-      start_line() << "Condition: " << std::endl;
-      print_gpu_thunk_sequence(stream_executor, sync_thunk->condition_thunk_sequence()->thunks(), idx, depth + 1);
-      start_line() << "Body: " << std::endl;
-      print_gpu_thunk_sequence(stream_executor, sync_thunk->body_thunk_sequence()->thunks(), idx, depth + 1);
+      start_line() << "  Loop Condition: " << std::endl;
+      print_gpu_thunk_sequence(stream_executor, my_thunk->condition_thunk_sequence()->thunks(), idx, depth + 2);
+      start_line() << "  Loop Body: " << std::endl;
+      print_gpu_thunk_sequence(stream_executor, my_thunk->body_thunk_sequence()->thunks(), idx, depth + 2);
     } else {
       std::cout << std::endl;
     }
   }
 }
 
-void print_gpu_thunk_info(const xla::LocalClient &client, xla::gpu::GpuExecutable &gpu_exec) {
-  using namespace xla;
-
+void print_gpu_thunk_info(const LocalClient &client, gpu::GpuExecutable &gpu_exec) {
   const gpu::ThunkSequence &thunk_sequence = gpu_exec.GetThunk().thunks();
-  std::cout << "Total thunks: " << thunk_sequence.size() << std::endl;
+  std::cout << "=== Thunk List (" << thunk_sequence.size() << ") ===" << std::endl;
 
   int idx = 0;
   const auto executor = client.backend().stream_executor(0).value();
   print_gpu_thunk_sequence(executor, thunk_sequence, idx);
 }
 
-std::vector<std::vector<std::unique_ptr<xla::PjRtBuffer>>> compile_and_execute(xla::PjRtStreamExecutorClient &pjrt_client,
-                                                                               const xla::XlaComputation &computation,
-                                                                               absl::Span<const std::vector<xla::PjRtBuffer *>> argument_handles,
-                                                                               const xla::CompileOptions &compile_opts, const xla::ExecuteOptions &exec_opts) {
+std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> compile_and_execute(PjRtStreamExecutorClient &pjrt_client, const XlaComputation &computation,
+                                                                          absl::Span<const std::vector<PjRtBuffer *>> argument_handles,
+                                                                          const CompileOptions &compile_opts, const ExecuteOptions &exec_opts) {
   // Compile the XLA computation.
   auto exec_or = pjrt_client.Compile(computation, compile_opts);
-  const std::unique_ptr<xla::PjRtLoadedExecutable> executable = std::move(exec_or.value());
+  const std::unique_ptr<PjRtLoadedExecutable> executable = std::move(exec_or.value());
 
   // Print GPU thunk info
   auto gpu_executable =
-      dynamic_cast<xla::gpu::GpuExecutable *>(dynamic_cast<xla::PjRtStreamExecutorLoadedExecutable *>(executable.get())->executables()[0]->executable());
+      dynamic_cast<gpu::GpuExecutable *>(dynamic_cast<PjRtStreamExecutorLoadedExecutable *>(executable.get())->executables()[0]->executable());
   print_gpu_thunk_info(*pjrt_client.client(), *gpu_executable);
 
   // Execute the compiled executable.
@@ -155,18 +165,18 @@ std::vector<std::vector<std::unique_ptr<xla::PjRtBuffer>>> compile_and_execute(x
   return outputs;
 }
 
-tsl::StatusOr<std::shared_ptr<xla::Literal>> buffer_to_literal(xla::PjRtBuffer &buffer) {
+tsl::StatusOr<std::shared_ptr<Literal>> buffer_to_literal(PjRtBuffer &buffer) {
   TF_ASSIGN_OR_RETURN(const auto final_literal_or, buffer.ToLiteralSync());
-  const xla::Literal &final_literal = *final_literal_or;
-  std::cout << "Single output shape: " << xla::ShapeUtil::HumanString(final_literal.shape()) << std::endl;
+  const Literal &final_literal = *final_literal_or;
+  std::cout << "Single output shape: " << ShapeUtil::HumanString(final_literal.shape()) << std::endl;
   return final_literal_or;
 }
 
-tsl::StatusOr<std::shared_ptr<xla::Literal>> buffer_to_literal(const std::unique_ptr<xla::PjRtBuffer> &buffer) {
+tsl::StatusOr<std::shared_ptr<Literal>> buffer_to_literal(const std::unique_ptr<PjRtBuffer> &buffer) {
   if (buffer) {
     return buffer_to_literal(*buffer);
   }
-  return xla::InvalidArgument("Buffer is null");
+  return InvalidArgument("Buffer is null");
 }
 
 } // namespace xla_test_util

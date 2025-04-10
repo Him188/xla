@@ -1910,11 +1910,11 @@ absl::StatusOr<std::string> WrapFusionExplorer(
   <meta charset="utf-8">
   <style>
     html, body {height: 100%; text-align: center;}
-    #rendered {height: 70%; width: 80%; border:1px solid black; margin: auto; }
+    #rendered {height: 100%; width: 100%; border:1px solid black; margin: auto; }
     #label {width: 80%; margin: auto;}
     #performance_note { font-size: small; color: gray; }
     #frames_list {
-      list-style: none; text-align: left; height: 20%; overflow: scroll;
+      list-style: none; text-align: left; height: 2%; overflow: scroll;
     }
     #frames_list   li { padding: 0.2em; margin: 0.2em; }
     .selected { background-color: #e0e0e0; }

@@ -209,7 +209,7 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsWhile) {
     test_fun();
   }
   xla_test_util::PrintIrDumps(dumpDir, {
-                                           xla_test_util::IRDumpKind::kHLO,
+                                           xla_test_util::IRDumpKind::kHTML,
                                        });
 }
 
