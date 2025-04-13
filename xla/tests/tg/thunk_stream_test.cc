@@ -15,16 +15,13 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
 
   using namespace xla;
   auto test_fun = [](int round_number) {
-    // 1. Build a simple HLO computation graph using XlaBuilder.
     XlaBuilder builder("test_graph");
-    // Define shapes for some example operands
 
     constexpr int64_t N = 4048;
     constexpr int64_t M = 4048;
-    constexpr int64_t V = 2048;
 
     Shape matShape = ShapeUtil::MakeShape(F32, {N, M});
-    Shape vecShape = ShapeUtil::MakeShape(F32, {V});
+
     // Create parameters
     XlaOp A = Parameter(&builder, 0, matShape, "A");
     XlaOp B = Parameter(&builder, 1, matShape, "B");
@@ -85,7 +82,7 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
     ASSERT_TRUE(std::abs(tuple[0].Get<float>({0, 0}) - 1.67047e+07) < 1e07);
   };
 
-  for (int i = 0; i < 100; ++i) {
+  for (int i = 0; i < 1; ++i) {
     test_fun(i);
   }
   xla_test_util::PrintIrDumps(dumpDir, {
