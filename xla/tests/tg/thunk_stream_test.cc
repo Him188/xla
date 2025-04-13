@@ -28,20 +28,17 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
     // Create parameters
     XlaOp A = Parameter(&builder, 0, matShape, "A");
     XlaOp B = Parameter(&builder, 1, matShape, "B");
-    XlaOp C = Parameter(&builder, 2, vecShape, "C");
-    XlaOp D = Parameter(&builder, 3, vecShape, "D");
 
     XlaOp a_dot_b = Dot(A, B);
 
-    XlaOp heavy = Dot(A, B);
+    XlaOp heavy = a_dot_b;
     for (int i = 0; i < 1; ++i) {
       heavy = Dot(heavy, B);
       heavy = heavy - a_dot_b;
     }
 
     XlaOp matmul = heavy;
-    XlaOp elemadd = Add(C, D);
-    XlaOp output = Tuple(&builder, {matmul, Dot(A, B), Dot(A, B), Dot(A, B), elemadd});
+    XlaOp output = Tuple(&builder, {matmul});
     XlaComputation computation = builder.Build(output).value();
 
     // Set debug options
@@ -70,16 +67,12 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
     // Create buffers for the input parameters
     std::vector hostA(N * M, 1.0f);
     std::vector hostB(N * M, 1.01f);
-    std::vector hostC(V, 3.0f);
-    std::vector hostD(V, 4.0f);
 
     std::unique_ptr<PjRtBuffer> bufferA = xla_test_util::CreateDeviceBuffer(*pjrt_client, hostA, matShape);
     std::unique_ptr<PjRtBuffer> bufferB = xla_test_util::CreateDeviceBuffer(*pjrt_client, hostB, matShape);
-    std::unique_ptr<PjRtBuffer> bufferC = xla_test_util::CreateDeviceBuffer(*pjrt_client, hostC, vecShape);
-    std::unique_ptr<PjRtBuffer> bufferD = xla_test_util::CreateDeviceBuffer(*pjrt_client, hostD, vecShape);
 
     const std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> outputs =
-        xla_test_util::compile_and_execute(pjrt_stream_client, computation, {{bufferA.get(), bufferB.get(), bufferC.get(), bufferD.get()}}, compile_options);
+        xla_test_util::compile_and_execute(pjrt_stream_client, computation, {{bufferA.get(), bufferB.get()}}, compile_options);
 
     // Print output for this round
     auto literal = xla_test_util::buffer_to_literal(outputs[0][0]).value();
@@ -95,10 +88,10 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
   for (int i = 0; i < 100; ++i) {
     test_fun(i);
   }
-  // xla_test_util::PrintIrDumps(dumpDir, {
-  //                                          xla_test_util::IRDumpKind::kHLO,
-  //                                          xla_test_util::IRDumpKind::kHTML,
-  //                                      });
+  xla_test_util::PrintIrDumps(dumpDir, {
+                                           xla_test_util::IRDumpKind::kHLO,
+                                           xla_test_util::IRDumpKind::kHTML,
+                                       });
 }
 
 TEST(XlaCompilationTest, ExecuteOnMultpleStreamsWhile) {
