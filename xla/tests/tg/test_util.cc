@@ -139,6 +139,9 @@ void xla_test_util::print_gpu_thunk_sequence(se::StreamExecutor *stream_executor
 }
 
 void print_gpu_thunk_info(const LocalClient &client, gpu::GpuExecutable &gpu_exec) {
+  // std::cout << "\n=== Thunk Text (NVPTX) ===" << std::endl;
+  // std::cout << gpu_exec.text() << std::endl;
+
   const gpu::ThunkSequence &thunk_sequence = gpu_exec.GetThunk().thunks();
   std::cout << "\n=== Thunk List (" << thunk_sequence.size() << ") ===" << std::endl;
 
