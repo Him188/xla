@@ -1,5 +1,6 @@
 #include "test_util.h"
 
+#include "xla/backends/gpu/runtime/gemm_thunk.h"
 #include "xla/backends/gpu/runtime/wait_for_streams_thunk.h"
 #include "xla/stream_executor/gpu/gpu_command_buffer.h"
 
@@ -114,7 +115,7 @@ void xla_test_util::print_gpu_thunk_sequence(se::StreamExecutor *stream_executor
       // auto & buffers = command_buffer_thunk->state_.get()->command_buffers;
       // std::cout << "Buffer size: " << (buffers.size()) << std::endl;
       // for (auto &[se, executor_buffer] : buffers) {
-      auto *command_buffer = executor_buffer.get()->command_buffer.get();
+      auto *command_buffer = executor_buffer->command_buffer.get();
       auto *gpu_command_buffer = dynamic_cast<stream_executor::gpu::GpuCommandBuffer *>(command_buffer);
       auto gpu_graph_node_infos = gpu_command_buffer->nodes();
       std::cout << ", GPU graph node info size: " << gpu_graph_node_infos.size();
@@ -126,12 +127,17 @@ void xla_test_util::print_gpu_thunk_sequence(se::StreamExecutor *stream_executor
       auto waits = sync_thunk->wait_for_stream_id();
       std::cout << ", waits for stream  " << waits << "";
       std::cout << std::endl;
-    } else if (auto *my_thunk = dynamic_cast<const gpu::WhileThunk *>(thunk)) {
+    } else if (auto *while_thunk = dynamic_cast<const gpu::WhileThunk *>(thunk)) {
       std::cout << std::endl;
       start_line() << "  Loop Condition: " << std::endl;
-      print_gpu_thunk_sequence(stream_executor, my_thunk->condition_thunk_sequence()->thunks(), idx, depth + 2);
+      print_gpu_thunk_sequence(stream_executor, while_thunk->condition_thunk_sequence()->thunks(), idx, depth + 2);
       start_line() << "  Loop Body: " << std::endl;
-      print_gpu_thunk_sequence(stream_executor, my_thunk->body_thunk_sequence()->thunks(), idx, depth + 2);
+      print_gpu_thunk_sequence(stream_executor, while_thunk->body_thunk_sequence()->thunks(), idx, depth + 2);
+    } else if (auto *gemm_thunk = dynamic_cast<const gpu::GemmThunk *>(thunk)) {
+      std::cout << ", LHS: " << gemm_thunk->lhs_buffer();
+      std::cout << ", RHS: " << gemm_thunk->rhs_buffer();
+      std::cout << ", output: " << gemm_thunk->output_buffer();
+      std::cout << std::endl;
     } else {
       std::cout << std::endl;
     }
@@ -150,6 +156,28 @@ void print_gpu_thunk_info(const LocalClient &client, gpu::GpuExecutable &gpu_exe
   print_gpu_thunk_sequence(executor, thunk_sequence, idx);
   std::cout << "=== End of Thunk List ===\n" << std::endl;
 }
+
+// inline std::ostream& operator<<(std::ostream& os,
+//                                 const BufferAllocation::Slice& slice) {
+//   const BufferAllocation* alloc = slice.allocation();   // may be nullptr
+//
+//   os << "Slice(index=" << slice.index()
+//      << ", offset="     << slice.offset()
+//      << ", size="       << slice.size();
+//
+//   if (alloc) {  // extra context that lives on the parent allocation
+//     os << ", allocation_size=" << alloc->size()
+//        << ", is_input="        << std::boolalpha << alloc->is_input()
+//        << ", is_output="       << alloc->is_output()
+//        << ", is_constant="     << alloc->is_constant()
+//        << ", maybe_live_out="  << alloc->maybe_live_out();
+//   } else {
+//     os << ", alloc is nullptr";
+//   }
+//
+//   os << ')';
+//   return os;
+// }
 
 std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> compile_and_execute(PjRtStreamExecutorClient &pjrt_client, const XlaComputation &computation,
                                                                           absl::Span<const std::vector<PjRtBuffer *>> argument_handles,
