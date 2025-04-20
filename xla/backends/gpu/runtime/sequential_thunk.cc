@@ -83,6 +83,11 @@ absl::Status SequentialThunk::ExecuteOnStream(const ExecuteParams& params) {
     if (params.mock_collectives && thunk->IsCollective()) {
       continue;
     }
+    std::cout << "[Stream] Launching thunk on stream " << "S_"
+              << GetStreamForExecution(thunk->execution_stream_id(), params)
+                     .value()
+                     ->GetName()
+              << ": " << Thunk::KindToString(thunk->kind()) << std::endl;
     TF_RETURN_IF_ERROR(thunk->ExecuteOnStream(params));
   }
   return absl::OkStatus();

@@ -203,16 +203,36 @@ absl::Status CudaStream::WaitFor(Stream* other) {
   CudaStream* other_stream = static_cast<CudaStream*>(other);
 
   TF_RETURN_IF_ERROR(other_stream->RecordCompletedEvent());
+
+  std::cout << "[Stream] ";
+
+  std::cout << "E_" << other_stream->completed_event_.GetHandle();  // ptr
+  std::cout << " (completed_event)";
+
+  std::cout << "->" << "S_" << this->GetName() << std::endl;
+
   return WaitStreamOnEvent(executor_, stream_handle_,
                            other_stream->completed_event_.GetHandle());
 }
 
 absl::Status CudaStream::RecordEvent(Event* event) {
+  std::cout << "[Stream] " << "S_" << this->GetName() << " recorded ";
+
+  std::cout << "E_" << static_cast<CudaEvent*>(event)->GetHandle();  // ptr
+  if (event == &completed_event_) {
+    std::cout << " (completed_event)";
+  }
+
+  std::cout << std::endl;
+
   return RecordGpuEvent(executor_, static_cast<CudaEvent*>(event)->GetHandle(),
                         stream_handle_);
 }
 
 absl::Status CudaStream::WaitFor(Event* event) {
+  std::cout << "[Stream] " << "E_" << event << "->" << "S_" << this->GetName()
+            << std::endl;
+
   return WaitStreamOnEvent(executor_, stream_handle_,
                            static_cast<CudaEvent*>(event)->GetHandle());
 }
@@ -244,6 +264,8 @@ void DestroyStream(StreamExecutor* executor, CUstream stream) {
 }
 
 absl::Status SynchronizeStream(StreamExecutor* executor, CUstream stream) {
+  std::cout << "[Stream] " << "Synchronize S" << stream << std::endl;
+
   std::unique_ptr<ActivateContext> activation = executor->Activate();
   CHECK(stream != nullptr);
   return cuda::ToStatus(cuStreamSynchronize(stream),

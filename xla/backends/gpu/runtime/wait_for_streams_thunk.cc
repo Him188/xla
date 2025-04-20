@@ -32,7 +32,7 @@ absl::Status WaitForStreamsThunk::ExecuteOnStream(const ExecuteParams& params) {
       se::Stream * wait_on_stream,
       Thunk::GetStreamForExecution(wait_for_stream_id_, params));
 
-  // return stream->WaitFor(wait_on_stream);
+  return stream->WaitFor(wait_on_stream);
   return absl::OkStatus();
 }
 

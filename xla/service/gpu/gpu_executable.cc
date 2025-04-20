@@ -339,11 +339,22 @@ absl::Status ExecuteThunks(
         RendezvousAfterInitialization(run_options, debug_options));
   }
 
+  // Assign names for the streams
+  main_stream->SetName("Compute0");
+  for (auto &[id, stream] : additional_execution_streams) {
+    stream->SetName("Compute" + std::to_string(id.value()));
+  }
+  command_buffer_trace_stream->SetName("CommandBufferTrace");
+
   // Prepare parameters for thunks execution.
   Thunk::ExecuteParams execute_params = Thunk::ExecuteParams::Create(
       *run_options, buffer_allocations, main_stream,
       command_buffer_trace_stream, &collective_params, &collective_cliques,
       std::move(additional_execution_streams));
+
+  for (int i = 0; i < kAsyncStreamTotal; ++i) {
+    async_comms_streams[i]->SetName("Async"+i);
+  }
 
   TF_RETURN_IF_ERROR(thunk_sequence.ExecuteOnStream(execute_params));
 
