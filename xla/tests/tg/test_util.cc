@@ -2,6 +2,7 @@
 
 #include "xla/backends/gpu/runtime/gemm_thunk.h"
 #include "xla/backends/gpu/runtime/wait_for_streams_thunk.h"
+#include "xla/hlo/builder/xla_builder.h"
 #include "xla/stream_executor/gpu/gpu_command_buffer.h"
 
 #include <fstream>

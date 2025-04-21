@@ -82,13 +82,97 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
     ASSERT_TRUE(std::abs(tuple[0].Get<float>({0, 0}) - 1.67047e+07) < 1e07);
   };
 
-  for (int i = 0; i < 1; ++i) {
+  constexpr int num_runs = 1;
+
+  for (int i = 0; i < num_runs; ++i) {
     test_fun(i);
   }
-  xla_test_util::PrintIrDumps(dumpDir, {
-                                           xla_test_util::IRDumpKind::kHLO,
-                                           xla_test_util::IRDumpKind::kHTML,
-                                       });
+  if constexpr (num_runs == 1) {
+    xla_test_util::PrintIrDumps(dumpDir, {
+                                             xla_test_util::IRDumpKind::kHLO,
+                                             xla_test_util::IRDumpKind::kHTML,
+                                         });
+  }
+}
+
+TEST(XlaCompilationTest, SlicedCopy) {
+  std::string dumpDir = ::testing::TempDir() + "/xla_dump";
+  std::filesystem::create_directory(dumpDir);
+  xla_test_util::SetXlaDumpFlags(dumpDir);
+
+
+  auto test_fun = [](int round_number) {
+    XlaBuilder b("sliced_copy_race");
+    Shape shape = ShapeUtil::MakeShape(F32, {1 << 20});
+    auto p = Parameter(&b, 0, shape, "p");
+
+    // Slice A: bytes 0 .. 2MiB
+    auto slice_a = Slice(p, {0}, {1 << 19}, {1});
+    // Slice B: bytes 1MiB .. 3MiB   ← deliberate 1MiB overlap
+    auto slice_b = Slice(p, {1 << 18}, {3 << 18}, {1});
+
+    // Dummy use to keep both slices live until after concat.
+    auto concat = ConcatInDim(&b, {slice_a, slice_b}, /*dimension=*/0);
+
+    // Overwrite tensor so that a race is observable.
+    auto sentinel = Broadcast(ConstantR0<float>(&b, 3.14f), {1 << 20});
+    auto out = Add(concat, sentinel);
+
+    XlaComputation computation = b.Build(out).value();
+
+    // Set debug options
+    CompileOptions compile_options;
+    ExecutableBuildOptions &build_opts = compile_options.executable_build_options;
+    build_opts.set_device_ordinal(0); // target GPU 0
+
+    DebugOptions &debug_opts = *build_opts.mutable_debug_options();
+    build_opts.mutable_debug_options()->add_xla_disable_hlo_passes();
+    build_opts.mutable_debug_options()->set_xla_gpu_enable_latency_hiding_scheduler(true);
+    build_opts.mutable_debug_options()->set_xla_gpu_enable_dynamic_slice_fusion(false);
+    build_opts.mutable_debug_options()->set_xla_gpu_enable_host_memory_offloading(true);
+    debug_opts.set_xla_dump_hlo_as_html(true);
+
+    debug_opts.clear_xla_gpu_enable_command_buffer();
+    debug_opts.add_xla_gpu_enable_command_buffer(DebugOptions_CommandBufferCmdType_INVALID);
+
+    // Get PjRt client
+    GpuClientOptions options;
+    auto client_or = GetStreamExecutorGpuClient(options);
+    ASSERT_TRUE(client_or.ok());
+    std::unique_ptr<PjRtClient> pjrt_client = std::move(client_or.value());
+    auto &pjrt_stream_client = *dynamic_cast<PjRtStreamExecutorClient *>(pjrt_client.get());
+
+    // Create buffers for the input parameters
+    std::vector hostA(1 << 20, 1.0f);
+
+    std::unique_ptr<PjRtBuffer> bufferA = xla_test_util::CreateDeviceBuffer(*pjrt_client, hostA, shape);
+
+    const std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> outputs =
+        xla_test_util::compile_and_execute(pjrt_stream_client, computation, {{bufferA.get()}}, compile_options);
+
+    // Print output for this round
+    auto literal = xla_test_util::buffer_to_literal(outputs[0][0]).value();
+    std::cout << "Shape: " << ShapeUtil::HumanString(literal->shape()) << std::endl;
+    // auto tuple = literal->DecomposeTuple();
+    // std::cout << "tuple size: " << tuple.size() << std::endl;
+
+    constexpr auto expected = 1 + 2 + 2 * 100;
+    double value = literal->GetAsDouble({0}).value();
+    std::cout << "Round " << round_number << " Value: " << value << std::endl;
+    ASSERT_TRUE(std::abs(value - 1.67047e+07) < 1e07);
+  };
+
+  constexpr int num_runs = 1;
+
+  for (int i = 0; i < num_runs; ++i) {
+    test_fun(i);
+  }
+  if constexpr (num_runs == 1) {
+    xla_test_util::PrintIrDumps(dumpDir, {
+                                             xla_test_util::IRDumpKind::kHLO,
+                                             xla_test_util::IRDumpKind::kHTML,
+                                         });
+  }
 }
 
 TEST(XlaCompilationTest, ExecuteOnMultpleStreamsWhile) {
