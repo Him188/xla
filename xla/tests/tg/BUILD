@@ -149,3 +149,20 @@ xla_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+xla_test(
+    name = "stream_collective",
+    srcs = [
+        "stream_collective.cc",
+    ],
+    deps = [
+        "test_util",
+        "//xla:test",
+        "//xla/hlo/testlib:test",
+        "//xla/tools/hlo_opt:gpu_opt",
+        #        "//xla/service/gpu:gpu_compiler",  # CUDA compiler
+        "//xla/tsl/lib/core:status_test_util",
+        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
