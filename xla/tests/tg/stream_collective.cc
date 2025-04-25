@@ -98,7 +98,7 @@ TEST(PJRTReplicasTest, DotAllReduceTwoReplicas) {
   // -------------------------------------------------------------------------
   // Execute.
   // -------------------------------------------------------------------------
-  TF_ASSERT_OK_AND_ASSIGN(auto outputs, exe->Execute(args, /*execute_options=*/{}));
+  TF_ASSERT_OK_AND_ASSIGN(auto outputs, exe->Execute(args, /*options=*/{}));
 
   // Each replica returns a tuple with one element (the reduced matrix).
   ASSERT_EQ(outputs.size(), 2);
