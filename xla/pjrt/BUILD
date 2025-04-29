@@ -280,6 +280,7 @@ cc_library(
         "//xla:util",
         "//xla:xla_data_proto_cc",
         "//xla:xla_proto_cc",
+        "//xla/backends/gpu/runtime:concurrency_tracer",
         "//xla/client:executable_build_options",
         "//xla/ffi:execution_context",
         "//xla/hlo/ir:hlo",

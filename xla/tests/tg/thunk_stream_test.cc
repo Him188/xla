@@ -71,6 +71,7 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
 
     gpu::ConcurrencyTracer tracer;
     ExecuteOptions execute_options;
+    execute_options.gpu_synthetic_bug_options.wait_for_streams_thunk = true;
     execute_options.gpu_concurrency_tracer = &tracer;
     const std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> outputs =
         xla_test_util::compile_and_execute(pjrt_stream_client, computation, {{bufferA.get(), bufferB.get()}}, compile_options, execute_options);
@@ -86,6 +87,7 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
     ASSERT_TRUE(std::abs(tuple[0].Get<float>({0, 0}) - 1.67047e+07) < 1e07);
 
     tracer.PrintTraces(std::cout);
+    tracer.PrintDataRaces(std::cout);
   };
 
   constexpr int num_runs = 1;

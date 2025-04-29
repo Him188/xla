@@ -2826,6 +2826,7 @@ PjRtStreamExecutorLoadedExecutable::EnqueueExecution(
   run_options.set_send_device_memory_function(&send_device_memory);
   run_options.set_recv_device_memory_function(&recv_device_memory);
   run_options.set_execution_profile(options.execution_profile);
+  run_options.set_gpu_synthetic_bug_options(&options.gpu_synthetic_bug_options);
   run_options.set_gpu_concurrency_tracer(options.gpu_concurrency_tracer);
   if (run_options.launch_id() != 0) {
     VLOG(3) << "launch id for " << name() << ": " << run_options.launch_id();

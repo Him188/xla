@@ -28,6 +28,21 @@ class ConcurrencyTracer {
 
   void PrintTraces(std::ostream& os);
 
+  // Post-mortem analysis -------------------------------------------------
+  struct DataRace {
+    BufferAllocation::Slice buffer;
+    size_t idx1;          // position of the first conflicting access in trace_
+    size_t idx2;          // position of the second conflicting access
+    bool first_is_write;  // true ⇔ BufferWrite
+    bool second_is_write;
+  };
+
+  // Returns the list of detected races.  Thread-safe, may be called many times.
+  std::vector<DataRace> DetectDataRaces() const;
+
+  // Pretty-print the races returned by DetectDataRaces().
+  void PrintDataRaces(std::ostream& os) const;
+
  private:
   class Trace {
    public:
@@ -72,6 +87,18 @@ class ConcurrencyTracer {
     std::lock_guard lock(mutex_);
     trace_.emplace_back(std::make_unique<T>(std::forward<Args>(args)...));
   }
+
+  enum class AccessKind { kRead, kWrite };
+
+  struct MemAccessInfo {
+    void* stream_id;
+    BufferAllocation::Slice buffer;
+    AccessKind kind;
+    size_t trace_idx;  // position inside trace_
+  };
+
+  using EdgeList = absl::flat_hash_map<size_t, absl::flat_hash_set<size_t>>;
+  EdgeList BuildHappensBeforeGraph() const;
 };
 
 }  // namespace xla::gpu

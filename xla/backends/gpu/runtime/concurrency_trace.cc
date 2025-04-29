@@ -119,4 +119,120 @@ void ConcurrencyTracer::PrintTraces(std::ostream& os) {
   // Restore caller’s formatting.
   os.flags(old_flags);
 }
+std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
+    const {
+  // 1. Collect all memory accesses.
+  std::vector<MemAccessInfo> accesses;
+  for (size_t i = 0; i < trace_.size(); ++i) {
+    if (auto* r = dynamic_cast<const BufferRead*>(trace_[i].get()); r) {
+      accesses.push_back({r->stream_id, r->buffer, AccessKind::kRead, i});
+    } else if (auto* w = dynamic_cast<const BufferWrite*>(trace_[i].get()); w) {
+      accesses.push_back({w->stream_id, w->buffer, AccessKind::kWrite, i});
+    }
+  }
+
+  // 2. Build happens-before graph once.
+  EdgeList hb = BuildHappensBeforeGraph();
+
+  // Helper: reachability with DFS (graph is tiny).
+  auto happens_before = [&](size_t a, size_t b) {
+    absl::flat_hash_set<size_t> seen;
+    std::vector<size_t> stack = {a};
+    while (!stack.empty()) {
+      size_t cur = stack.back();
+      stack.pop_back();
+      if (cur == b) return true;
+      if (!seen.insert(cur).second) continue;
+      auto it = hb.find(cur);
+      if (it == hb.end()) continue;
+      stack.insert(stack.end(), it->second.begin(), it->second.end());
+    }
+    return false;
+  };
+
+  // 3. Pairwise race detection (N is small).
+  std::vector<DataRace> races;
+  for (size_t i = 0; i < accesses.size(); ++i) {
+    for (size_t j = i + 1; j < accesses.size(); ++j) {
+      const auto& a = accesses[i];
+      const auto& b = accesses[j];
+
+      // Different streams + same buffer + at least one write?
+      if (a.stream_id == b.stream_id) continue;
+      if (a.buffer != b.buffer) continue;
+      if (!(a.kind == AccessKind::kWrite || b.kind == AccessKind::kWrite))
+        continue;
+
+      // If neither happens-before the other, we have a race.
+      if (!happens_before(a.trace_idx, b.trace_idx) &&
+          !happens_before(b.trace_idx, a.trace_idx)) {
+        races.push_back({a.buffer, a.trace_idx, b.trace_idx,
+                         a.kind == AccessKind::kWrite,
+                         b.kind == AccessKind::kWrite});
+      }
+    }
+  }
+  return races;
+}
+void ConcurrencyTracer::PrintDataRaces(std::ostream& os) const {
+  auto races = DetectDataRaces();
+  if (races.empty()) {
+    os << "✅  No data-races detected in this execution.\n";
+    return;
+  }
+  os << "❌  Detected " << races.size() << " data-race"
+     << (races.size() == 1 ? "" : "s") << ":\n";
+  for (const auto& r : races) {
+    os << "  • Buffer @" << std::hex << r.buffer.allocation()->index()
+       << std::dec << " accessed at trace[" << r.idx1 << "] ("
+       << (r.first_is_write ? "W" : "R") << ") and trace[" << r.idx2 << "] ("
+       << (r.second_is_write ? "W" : "R") << ") without ordering.\n";
+  }
+}
+
+ConcurrencyTracer::EdgeList ConcurrencyTracer::BuildHappensBeforeGraph() const {
+  EdgeList hb;
+  auto add_edge = [&](size_t a, size_t b) { hb[a].insert(b); };
+
+  // (1) program order — consecutive records on the same stream
+  absl::flat_hash_map<void*, size_t> last_seen_on_stream;
+  for (size_t i = 0; i < trace_.size(); ++i) {
+    if (auto* t = dynamic_cast<const BufferRead*>(trace_[i].get()); t) {
+      if (auto it = last_seen_on_stream.find(t->stream_id);
+          it != last_seen_on_stream.end())
+        add_edge(it->second, i);
+      last_seen_on_stream[t->stream_id] = i;
+    } else if (auto* t = dynamic_cast<const BufferWrite*>(trace_[i].get()); t) {
+      if (auto it = last_seen_on_stream.find(t->stream_id);
+          it != last_seen_on_stream.end())
+        add_edge(it->second, i);
+      last_seen_on_stream[t->stream_id] = i;
+    } else if (auto* t = dynamic_cast<const EventRecord*>(trace_[i].get()); t) {
+      if (auto it = last_seen_on_stream.find(t->stream_id);
+          it != last_seen_on_stream.end())
+        add_edge(it->second, i);
+      last_seen_on_stream[t->stream_id] = i;
+    } else if (auto* t = dynamic_cast<const WaitForEvent*>(trace_[i].get());
+               t) {
+      if (auto it = last_seen_on_stream.find(t->stream_id);
+          it != last_seen_on_stream.end())
+        add_edge(it->second, i);
+      last_seen_on_stream[t->stream_id] = i;
+    }
+  }
+
+  // (2) event edges — Record → Wait on the *same* event id
+  absl::flat_hash_map<void*, size_t> record_pos;
+  for (size_t i = 0; i < trace_.size(); ++i) {
+    if (auto* rec = dynamic_cast<const EventRecord*>(trace_[i].get()); rec) {
+      record_pos[rec->event_id] = i;
+    } else if (auto* wait = dynamic_cast<const WaitForEvent*>(trace_[i].get());
+               wait) {
+      auto rec_it = record_pos.find(wait->event_id);
+      if (rec_it != record_pos.end()) add_edge(rec_it->second, i);
+    }
+  }
+  return hb;
+}
+
 }  // namespace xla::gpu

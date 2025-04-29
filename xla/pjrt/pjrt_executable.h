@@ -47,6 +47,7 @@ limitations under the License.
 #include "xla/shape.h"
 #include "xla/util.h"
 #include "xla/xla_data.pb.h"
+#include "xla/backends/gpu/runtime/thunk.h"
 
 namespace xla {
 
@@ -262,6 +263,7 @@ struct ExecuteOptions {
   // If not null, measure the execution profile and store it.
   ExecutionProfile* execution_profile = nullptr;
 
+  gpu::SyntheticBugOptions gpu_synthetic_bug_options{};
   gpu::ConcurrencyTracer* gpu_concurrency_tracer = nullptr;
 
   // A set of indices denoting the input buffers that should not be donated.
