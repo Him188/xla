@@ -53,6 +53,10 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
+struct SyntheticBugOptions {
+  bool wait_for_streams_thunk = false;
+};
+
 // Execution stream id allows to specify what Gpu stream Thunk should be using
 // for launching device work (kernels, library calls, etc.). By default all
 // thunks use stream #0, which is the default compute stream of an XLA
@@ -406,6 +410,7 @@ class Thunk {
 
     bool requires_exclusive_lock_on_gpu = false;
 
+    const SyntheticBugOptions* synthetic_bug_options{};
     ConcurrencyTracer* concurrency_tracer = nullptr;
 
    private:
@@ -423,6 +428,7 @@ class Thunk {
                   ExecutionStreamIdMap additional_compute_streams = {},
                   bool mock_collectives = false,
                   bool requires_exclusive_lock_on_gpu = false,
+                  const SyntheticBugOptions* synthetic_bug_options = {},
                   ConcurrencyTracer* tracer = nullptr);
   };
 

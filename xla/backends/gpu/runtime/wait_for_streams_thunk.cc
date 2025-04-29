@@ -32,6 +32,12 @@ absl::Status WaitForStreamsThunk::ExecuteOnStream(const ExecuteParams& params) {
       se::Stream * wait_on_stream,
       Thunk::GetStreamForExecution(wait_for_stream_id_, params));
 
+  if (const auto* options = params.synthetic_bug_options) {
+    if (options->wait_for_streams_thunk) {
+      return absl::OkStatus();
+    }
+  }
+
   return stream->WaitFor(wait_on_stream);
 }
 

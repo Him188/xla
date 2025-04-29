@@ -179,6 +179,15 @@ ExecutableRunOptions& ExecutableRunOptions::set_local_device_count(
 int ExecutableRunOptions::local_device_count() const {
   return local_device_count_;
 }
+ExecutableRunOptions& ExecutableRunOptions::set_gpu_synthetic_bug_options(
+    gpu::SyntheticBugOptions* options) {
+  gpu_synthetic_bug_options_ = options;
+  return *this;
+}
+gpu::SyntheticBugOptions* ExecutableRunOptions::gpu_synthetic_bug_options()
+    const {
+  return gpu_synthetic_bug_options_;
+}
 
 ExecutableRunOptions& ExecutableRunOptions::set_gpu_concurrency_tracer(
     gpu::ConcurrencyTracer* tracer) {

@@ -58,6 +58,7 @@ class CpuExecutableRunOptions;
 namespace gpu {
 class ConcurrencyTracer;
 class GpuExecutableRunOptions;
+class SyntheticBugOptions;
 }  // namespace gpu
 
 namespace ffi {
@@ -255,6 +256,10 @@ class ExecutableRunOptions {
   ExecutableRunOptions& set_local_device_count(int local_device_count);
   int local_device_count() const;
 
+  ExecutableRunOptions& set_gpu_synthetic_bug_options(
+    gpu::SyntheticBugOptions* options);
+  gpu::SyntheticBugOptions* gpu_synthetic_bug_options() const;
+
   ExecutableRunOptions& set_gpu_concurrency_tracer(
       gpu::ConcurrencyTracer* tracer);
   gpu::ConcurrencyTracer* gpu_concurrency_tracer() const;
@@ -279,6 +284,7 @@ class ExecutableRunOptions {
   const cpu::CpuExecutableRunOptions* cpu_executable_run_options_ = nullptr;
   const gpu::GpuExecutableRunOptions* gpu_executable_run_options_ = nullptr;
   const ffi::ExecutionContext* ffi_execution_context_ = nullptr;
+  gpu::SyntheticBugOptions *gpu_synthetic_bug_options_ = nullptr;
   gpu::ConcurrencyTracer* gpu_concurrency_tracer_ = nullptr;
 };
 
