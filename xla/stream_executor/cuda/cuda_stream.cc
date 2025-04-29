@@ -48,6 +48,7 @@ limitations under the License.
 #include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/statusor.h"
 #include "tsl/profiler/lib/nvtx_utils.h"
+#include "xla/backends/gpu/runtime/concurrency_trace.h"
 
 namespace stream_executor {
 namespace gpu {
@@ -179,7 +180,8 @@ absl::Status AsynchronousMemcpyD2D(StreamExecutor* executor,
 
 absl::StatusOr<std::unique_ptr<CudaStream>> CudaStream::Create(
     StreamExecutor* executor,
-    std::optional<std::variant<StreamPriority, int>> priority) {
+    std::optional<std::variant<StreamPriority, int>> priority,
+       xla::gpu::ConcurrencyTracer* concurrency_tracer) {
   int stream_priority = [&]() {
     if (priority.has_value() && std::holds_alternative<int>(priority.value())) {
       return std::get<int>(priority.value());
@@ -196,7 +198,7 @@ absl::StatusOr<std::unique_ptr<CudaStream>> CudaStream::Create(
                                         /*allow_timing=*/false));
 
   return std::unique_ptr<CudaStream>(new CudaStream(
-      executor, std::move(completed_event), priority, stream_handle));
+      executor, std::move(completed_event), priority, stream_handle, concurrency_tracer));
 }
 
 absl::Status CudaStream::WaitFor(Stream* other) {
@@ -204,34 +206,35 @@ absl::Status CudaStream::WaitFor(Stream* other) {
 
   TF_RETURN_IF_ERROR(other_stream->RecordCompletedEvent());
 
-  std::cout << "[Stream] ";
+  // std::cout << "[Stream] ";
+  //
+  // std::cout << "E_" << other_stream->completed_event_.GetHandle();  // ptr
+  // std::cout << " (completed_event)";
+  //
+  // std::cout << "->" << "S_" << this->GetName() << std::endl;
 
-  std::cout << "E_" << other_stream->completed_event_.GetHandle();  // ptr
-  std::cout << " (completed_event)";
-
-  std::cout << "->" << "S_" << this->GetName() << std::endl;
+  if (const auto tracer = concurrency_tracer_) {
+    tracer->OnStreamEventWait(*this, other_stream->completed_event_);
+  }
 
   return WaitStreamOnEvent(executor_, stream_handle_,
                            other_stream->completed_event_.GetHandle());
 }
 
 absl::Status CudaStream::RecordEvent(Event* event) {
-  std::cout << "[Stream] " << "S_" << this->GetName() << " recorded ";
-
-  std::cout << "E_" << static_cast<CudaEvent*>(event)->GetHandle();  // ptr
-  if (event == &completed_event_) {
-    std::cout << " (completed_event)";
+  if (const auto tracer = concurrency_tracer_) {
+    tracer->OnStreamEventRecord(*this, *event);
   }
 
-  std::cout << std::endl;
 
   return RecordGpuEvent(executor_, static_cast<CudaEvent*>(event)->GetHandle(),
                         stream_handle_);
 }
 
 absl::Status CudaStream::WaitFor(Event* event) {
-  std::cout << "[Stream] " << "E_" << event << "->" << "S_" << this->GetName()
-            << std::endl;
+  if (const auto tracer = concurrency_tracer_) {
+    tracer->OnStreamEventWait(*this, *event);
+  }
 
   return WaitStreamOnEvent(executor_, stream_handle_,
                            static_cast<CudaEvent*>(event)->GetHandle());

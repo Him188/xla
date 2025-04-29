@@ -54,6 +54,9 @@ limitations under the License.
 #include "xla/stream_executor/platform.h"
 #include "xla/stream_executor/stream_executor.h"
 
+namespace xla::gpu {
+class ConcurrencyTracer;
+}
 namespace stream_executor::gpu {
 
 // This class implements GpuExecutor for NVIDIA GPUs that use CUDA libraries.
@@ -140,6 +143,14 @@ class CudaExecutor : public GpuExecutor {
   absl::StatusOr<std::unique_ptr<MemoryAllocator>> CreateMemoryAllocator(
       MemoryType type) override;
 
+  void SetConcurrencyTracer(xla::gpu::ConcurrencyTracer* concurrency_tracer) {
+    concurrency_tracer_ = concurrency_tracer;
+  }
+
+  xla::gpu::ConcurrencyTracer* concurrency_tracer() const {
+    return concurrency_tracer_;
+  }
+
  private:
   // Loads a module in cubin format.
   absl::StatusOr<ModuleHandle> LoadModuleFromCuBin(const char* cubin)
@@ -217,6 +228,8 @@ class CudaExecutor : public GpuExecutor {
 
   // CudaContext for this device.
   CudaContext* cuda_context_;
+
+  xla::gpu::ConcurrencyTracer* concurrency_tracer_;
 };
 
 }  // namespace stream_executor::gpu

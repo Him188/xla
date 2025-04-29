@@ -406,6 +406,8 @@ class Thunk {
 
     bool requires_exclusive_lock_on_gpu = false;
 
+    ConcurrencyTracer* concurrency_tracer = nullptr;
+
    private:
     friend class CommandBufferThunk;
 
@@ -420,7 +422,8 @@ class Thunk {
                   const ffi::ExecutionContext* ffi_execution_context,
                   ExecutionStreamIdMap additional_compute_streams = {},
                   bool mock_collectives = false,
-                  bool requires_exclusive_lock_on_gpu = false);
+                  bool requires_exclusive_lock_on_gpu = false,
+                  ConcurrencyTracer* tracer = nullptr);
   };
 
   //===--------------------------------------------------------------------===//

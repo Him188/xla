@@ -203,7 +203,8 @@ Thunk::ExecuteParams Thunk::ExecuteParams::Create(
                            ? run_options.run_options()
                                  .gpu_executable_run_options()
                                  ->requires_exclusive_lock_on_gpu()
-                           : false);
+                           : false,
+                       run_options.run_options().gpu_concurrency_tracer());
 }
 
 Thunk::ExecuteParams Thunk::ExecuteParams::CloneWithNewAllocations(
@@ -214,7 +215,8 @@ Thunk::ExecuteParams Thunk::ExecuteParams::CloneWithNewAllocations(
       params.collective_params, params.collective_cliques,
       params.device_to_host_stream, params.host_to_device_stream,
       params.send_device_memory_function, params.recv_device_memory_function,
-      params.ffi_execution_context, params.additional_compute_streams);
+      params.ffi_execution_context, params.additional_compute_streams,
+      params.concurrency_tracer);
 }
 
 Thunk::ExecuteParams::ExecuteParams(
@@ -227,7 +229,7 @@ Thunk::ExecuteParams::ExecuteParams(
     RecvDeviceMemoryFunction* recv_device_memory_function,
     const ffi::ExecutionContext* ffi_execution_context,
     ExecutionStreamIdMap additional_compute_streams, bool mock_collectives,
-    bool requires_exclusive_lock_on_gpu)
+    bool requires_exclusive_lock_on_gpu, ConcurrencyTracer* concurrency_tracer)
     : buffer_allocations(buffer_allocations),
       stream(stream),
       command_buffer_trace_stream(command_buffer_trace_stream),
@@ -240,7 +242,8 @@ Thunk::ExecuteParams::ExecuteParams(
       ffi_execution_context(ffi_execution_context),
       additional_compute_streams(additional_compute_streams),
       mock_collectives(mock_collectives),
-      requires_exclusive_lock_on_gpu(requires_exclusive_lock_on_gpu) {}
+      requires_exclusive_lock_on_gpu(requires_exclusive_lock_on_gpu),
+      concurrency_tracer(concurrency_tracer) {}
 
 //===----------------------------------------------------------------------===//
 

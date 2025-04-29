@@ -56,6 +56,7 @@ class CpuExecutableRunOptions;
 }  // namespace cpu
 
 namespace gpu {
+class ConcurrencyTracer;
 class GpuExecutableRunOptions;
 }  // namespace gpu
 
@@ -254,6 +255,10 @@ class ExecutableRunOptions {
   ExecutableRunOptions& set_local_device_count(int local_device_count);
   int local_device_count() const;
 
+  ExecutableRunOptions& set_gpu_concurrency_tracer(
+      gpu::ConcurrencyTracer* tracer);
+  gpu::ConcurrencyTracer* gpu_concurrency_tracer() const;
+
  private:
   stream_executor::DeviceMemoryAllocator* allocator_ = nullptr;
   int device_ordinal_ = -1;
@@ -274,6 +279,7 @@ class ExecutableRunOptions {
   const cpu::CpuExecutableRunOptions* cpu_executable_run_options_ = nullptr;
   const gpu::GpuExecutableRunOptions* gpu_executable_run_options_ = nullptr;
   const ffi::ExecutionContext* ffi_execution_context_ = nullptr;
+  gpu::ConcurrencyTracer* gpu_concurrency_tracer_ = nullptr;
 };
 
 }  // namespace xla

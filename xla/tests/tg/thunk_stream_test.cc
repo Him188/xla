@@ -1,4 +1,5 @@
 #include "test_util.h"
+#include "xla/backends/gpu/runtime/concurrency_trace.h"
 #include "xla/hlo/builder/xla_builder.h"
 #include "xla/tsl/lib/core/status_test_util.h"
 
@@ -68,8 +69,11 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
     std::unique_ptr<PjRtBuffer> bufferA = xla_test_util::CreateDeviceBuffer(*pjrt_client, hostA, matShape);
     std::unique_ptr<PjRtBuffer> bufferB = xla_test_util::CreateDeviceBuffer(*pjrt_client, hostB, matShape);
 
+    gpu::ConcurrencyTracer tracer;
+    ExecuteOptions execute_options;
+    execute_options.gpu_concurrency_tracer = &tracer;
     const std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> outputs =
-        xla_test_util::compile_and_execute(pjrt_stream_client, computation, {{bufferA.get(), bufferB.get()}}, compile_options);
+        xla_test_util::compile_and_execute(pjrt_stream_client, computation, {{bufferA.get(), bufferB.get()}}, compile_options, execute_options);
 
     // Print output for this round
     auto literal = xla_test_util::buffer_to_literal(outputs[0][0]).value();
@@ -80,6 +84,8 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
     constexpr auto expected = 1 + 2 + 2 * 100;
     std::cout << "Round " << round_number << " Value: " << tuple[0].Get<float>({0, 0}) << std::endl;
     ASSERT_TRUE(std::abs(tuple[0].Get<float>({0, 0}) - 1.67047e+07) < 1e07);
+
+    tracer.PrintTraces(std::cout);
   };
 
   constexpr int num_runs = 1;
@@ -99,7 +105,6 @@ TEST(XlaCompilationTest, SlicedCopy) {
   std::string dumpDir = ::testing::TempDir() + "/xla_dump";
   std::filesystem::create_directory(dumpDir);
   xla_test_util::SetXlaDumpFlags(dumpDir);
-
 
   auto test_fun = [](int round_number) {
     XlaBuilder b("sliced_copy_race");

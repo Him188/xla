@@ -41,6 +41,20 @@ cc_library(
     ] + if_cuda_is_configured(nvtx_headers()),
 )
 
+cc_library(
+    name = "concurrency_tracer",
+    srcs = ["concurrency_trace.cc"],
+    hdrs = ["concurrency_trace.h"],
+    deps = [
+        ":thunk",
+        "//xla/backends/gpu/runtime:gemm_thunk",
+        "//xla/backends/gpu/runtime:dynamic_slice_thunk",
+        "//xla/backends/gpu/runtime:wait_for_streams_thunk",
+        "//xla/stream_executor/cuda:cuda_event",
+        #        "//xla/stream_executor/cuda:cuda_stream",
+    ],
+)
+
 #===-------------------------------------------------------------------------------------------===//
 # Command Buffer Integration
 #===-------------------------------------------------------------------------------------------===//

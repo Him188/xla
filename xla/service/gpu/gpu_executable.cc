@@ -90,6 +90,8 @@ limitations under the License.
 #include "tsl/platform/statusor.h"
 #include "tsl/profiler/lib/scoped_annotation.h"
 #include "tsl/profiler/lib/traceme.h"
+#include "xla/backends/gpu/runtime/concurrency_trace.h"
+#include "xla/stream_executor/cuda/cuda_executor.h"
 
 namespace xla {
 namespace gpu {
@@ -356,6 +358,19 @@ absl::Status ExecuteThunks(
     async_comms_streams[i]->SetName("Async"+i);
   }
 
+  // Set concurrency tracer for stream executor
+    for (const std::unique_ptr<Thunk>& thunk : thunk_sequence.thunks()) {
+      const auto stream_executor = execute_params.stream->parent();
+      if (const auto cuda_executor =
+              dynamic_cast<stream_executor::gpu::CudaExecutor*>(
+                  stream_executor)) {
+        cuda_executor->SetConcurrencyTracer(execute_params.concurrency_tracer);
+                  }
+
+      if (const auto tracer = execute_params.concurrency_tracer) {
+        tracer->OnThunkLaunch(*thunk.get(), execute_params);
+      }
+    }
   TF_RETURN_IF_ERROR(thunk_sequence.ExecuteOnStream(execute_params));
 
   return MaybeSyncAndProfile(run_options, execution_timer.get(),

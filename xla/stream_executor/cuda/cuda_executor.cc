@@ -1231,7 +1231,7 @@ absl::StatusOr<std::unique_ptr<Event>> CudaExecutor::CreateEvent() {
 
 absl::StatusOr<std::unique_ptr<Stream>> CudaExecutor::CreateStream(
     std::optional<std::variant<StreamPriority, int>> priority) {
-  TF_ASSIGN_OR_RETURN(auto stream, CudaStream::Create(this, priority));
+  TF_ASSIGN_OR_RETURN(auto stream, CudaStream::Create(this, priority, concurrency_tracer()));
   absl::MutexLock l(&alive_gpu_streams_mu_);
   alive_gpu_streams_[stream->stream_handle()] = stream.get();
   return std::move(stream);

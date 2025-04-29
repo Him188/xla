@@ -180,4 +180,13 @@ int ExecutableRunOptions::local_device_count() const {
   return local_device_count_;
 }
 
+ExecutableRunOptions& ExecutableRunOptions::set_gpu_concurrency_tracer(
+    gpu::ConcurrencyTracer* tracer) {
+  gpu_concurrency_tracer_ = tracer;
+  return *this;
+}
+gpu::ConcurrencyTracer* ExecutableRunOptions::gpu_concurrency_tracer() const {
+  return gpu_concurrency_tracer_;
+}
+
 }  // namespace xla

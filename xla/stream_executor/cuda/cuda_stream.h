@@ -39,6 +39,9 @@ limitations under the License.
 #include "xla/stream_executor/stream.h"
 #include "xla/stream_executor/stream_common.h"
 
+namespace xla::gpu {
+class ConcurrencyTracer;
+}
 namespace stream_executor {
 namespace gpu {
 
@@ -74,7 +77,8 @@ class CudaStream : public StreamCommon {
 
   static absl::StatusOr<std::unique_ptr<CudaStream>> Create(
       StreamExecutor* executor,
-      std::optional<std::variant<StreamPriority, int>> priority);
+      std::optional<std::variant<StreamPriority, int>> priority,
+      xla::gpu::ConcurrencyTracer* concurrency_tracer = nullptr);
 
   ~CudaStream() override;
 
@@ -83,11 +87,13 @@ class CudaStream : public StreamCommon {
  private:
   CudaStream(StreamExecutor* executor, CudaEvent completed_event,
              std::optional<std::variant<StreamPriority, int>> priority,
-             CUstream stream_handle)
+             CUstream stream_handle,
+             xla::gpu::ConcurrencyTracer* concurrency_tracer)
       : StreamCommon(executor, priority),
         executor_(executor),
         completed_event_(std::move(completed_event)),
-        stream_handle_(stream_handle) {}
+        stream_handle_(stream_handle),
+        concurrency_tracer_(concurrency_tracer) {}
 
   absl::Status RecordCompletedEvent();
 
@@ -103,6 +109,8 @@ class CudaStream : public StreamCommon {
   absl::Mutex mutex_;
   bool no_pending_host_callbacks_ ABSL_GUARDED_BY(mutex_) = true;
   std::atomic<int> num_pending_host_callbacks_ = 0;
+
+  xla::gpu::ConcurrencyTracer* concurrency_tracer_ = nullptr;
 };
 }  // namespace gpu
 
