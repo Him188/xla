@@ -14,6 +14,8 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
   std::filesystem::create_directory(dumpDir);
   xla_test_util::SetXlaDumpFlags(dumpDir);
 
+  constexpr int device_ordinal = 0;
+
   using namespace xla;
   auto test_fun = [](int round_number) {
     XlaBuilder builder("test_graph");
@@ -42,7 +44,7 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
     // Set debug options
     CompileOptions compile_options;
     ExecutableBuildOptions &build_opts = compile_options.executable_build_options;
-    build_opts.set_device_ordinal(0); // target GPU 0
+    build_opts.set_device_ordinal(device_ordinal);
 
     DebugOptions &debug_opts = *build_opts.mutable_debug_options();
     build_opts.mutable_debug_options()->add_xla_disable_hlo_passes();
@@ -66,8 +68,8 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
     std::vector hostA(N * M, 1.0f);
     std::vector hostB(N * M, 1.01f);
 
-    std::unique_ptr<PjRtBuffer> bufferA = xla_test_util::CreateDeviceBuffer(*pjrt_client, hostA, matShape);
-    std::unique_ptr<PjRtBuffer> bufferB = xla_test_util::CreateDeviceBuffer(*pjrt_client, hostB, matShape);
+    std::unique_ptr<PjRtBuffer> bufferA = xla_test_util::CreateDeviceBuffer(*pjrt_client, hostA, matShape, device_ordinal);
+    std::unique_ptr<PjRtBuffer> bufferB = xla_test_util::CreateDeviceBuffer(*pjrt_client, hostB, matShape, device_ordinal);
 
     gpu::ConcurrencyTracer tracer;
     ExecuteOptions execute_options;
