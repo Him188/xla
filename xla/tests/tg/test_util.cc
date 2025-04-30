@@ -74,7 +74,7 @@ void xla_test_util::PrintIrDumps(const std::string &dump_dir, const std::vector<
   }
 }
 
-std::unique_ptr<PjRtBuffer> xla_test_util::CreateDeviceBuffer(PjRtClient &client, absl::Span<const float> host_data, const Shape &shape) {
+std::unique_ptr<PjRtBuffer> xla_test_util::CreateDeviceBuffer(PjRtClient &client, absl::Span<const float> host_data, const Shape &shape, int device_ordinal) {
   // Check shape sizes match:
   size_t expected_size = 1;
   for (auto dim : shape.dimensions()) {
@@ -89,7 +89,7 @@ std::unique_ptr<PjRtBuffer> xla_test_util::CreateDeviceBuffer(PjRtClient &client
       /*type=*/F32,
       /*dims=*/shape.dimensions(),
       /*byte_strides=*/absl::nullopt, // row-major by default
-      PjRtClient::HostBufferSemantics::kImmutableZeroCopy, [] {}, client.devices()[0]->default_memory_space().value(), nullptr);
+      PjRtClient::HostBufferSemantics::kImmutableZeroCopy, [] {}, client.devices()[device_ordinal]->default_memory_space().value(), nullptr);
 
   TF_CHECK_OK(buffer_or.status());
   return std::move(buffer_or.value());

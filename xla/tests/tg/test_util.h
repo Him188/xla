@@ -50,7 +50,7 @@ void EnableLogs();
 void PrintIrDumps(const std::string &dump_dir, const std::vector<IRDumpKind> &kinds);
 
 // Creates a buffer on the device from host data.
-std::unique_ptr<PjRtBuffer> CreateDeviceBuffer(PjRtClient &client, absl::Span<const float> host_data, const Shape &shape);
+std::unique_ptr<PjRtBuffer> CreateDeviceBuffer(PjRtClient &client, absl::Span<const float> host_data, const Shape &shape, int device_ordinal= 0);
 
 void print_gpu_thunk_sequence(se::StreamExecutor *stream_executor, const gpu::ThunkSequence &thunk_sequence, int &idx, int depth = 0);
 
