@@ -24,8 +24,8 @@ static const stream_executor::gpu::CudaEvent& AssertCuda(
 //   return AssertCuda(&stream);
 // }
 
-ConcurrencyTracer::ConcurrencyTracer() {}
-ConcurrencyTracer::~ConcurrencyTracer() {}
+ConcurrencyTracer::ConcurrencyTracer() = default;
+ConcurrencyTracer::~ConcurrencyTracer() = default;
 void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
                                       const Thunk::ExecuteParams& params) {
 #define THUNK_CASE(type)                             \
@@ -87,7 +87,6 @@ void ConcurrencyTracer::PrintTraces(std::ostream& os) {
      << " entries)  ───────────────────────\n";
 
   for (const std::unique_ptr<Trace>& p : trace_) {
-    // `dynamic_cast` works because Trace now has a virtual destructor.
     if (const auto* t = dynamic_cast<const BufferRead*>(p.get()); t) {
       os << "[MemoryRead ] stream=0x" << std::hex << t->stream_id << " @ "
          << std::hex << t->buffer << std::dec << '\n';
@@ -121,23 +120,23 @@ void ConcurrencyTracer::PrintTraces(std::ostream& os) {
 }
 std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
     const {
-  // 1. Collect all memory accesses.
+  // Collect all memory accesses.
   std::vector<MemAccessInfo> accesses;
   for (size_t i = 0; i < trace_.size(); ++i) {
-    if (auto* r = dynamic_cast<const BufferRead*>(trace_[i].get()); r) {
+    if (const auto* r = dynamic_cast<const BufferRead*>(trace_[i].get()); r) {
       accesses.push_back({r->stream_id, r->buffer, AccessKind::kRead, i});
-    } else if (auto* w = dynamic_cast<const BufferWrite*>(trace_[i].get()); w) {
+    } else if (const auto* w = dynamic_cast<const BufferWrite*>(trace_[i].get()); w) {
       accesses.push_back({w->stream_id, w->buffer, AccessKind::kWrite, i});
     }
   }
 
-  // 2. Build happens-before graph once.
+  // Build happens-before graph once.
   EdgeList hb = BuildHappensBeforeGraph();
 
   // Helper: reachability with DFS (graph is tiny).
-  auto happens_before = [&](size_t a, size_t b) {
+  auto happens_before = [&](const size_t a, const size_t b) {
     absl::flat_hash_set<size_t> seen;
-    std::vector<size_t> stack = {a};
+    std::vector stack = {a};
     while (!stack.empty()) {
       size_t cur = stack.back();
       stack.pop_back();
@@ -150,7 +149,7 @@ std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
     return false;
   };
 
-  // 3. Pairwise race detection (N is small).
+  // Pairwise race detection
   std::vector<DataRace> races;
   for (size_t i = 0; i < accesses.size(); ++i) {
     for (size_t j = i + 1; j < accesses.size(); ++j) {
@@ -175,7 +174,7 @@ std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
   return races;
 }
 void ConcurrencyTracer::PrintDataRaces(std::ostream& os) const {
-  auto races = DetectDataRaces();
+  const auto races = DetectDataRaces();
   if (races.empty()) {
     os << "✅  No data-races detected in this execution.\n";
     return;

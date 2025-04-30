@@ -44,8 +44,7 @@ class ConcurrencyTracer {
   void PrintDataRaces(std::ostream& os) const;
 
  private:
-  class Trace {
-   public:
+  struct Trace {
     virtual ~Trace() = default;
   };
   struct BufferRead final : Trace {
