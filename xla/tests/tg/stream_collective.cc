@@ -53,26 +53,29 @@ TEST(PJRTReplicasTest, DotAllReduceTwoReplicas) {
   // PJRT client and compilation.
   // -------------------------------------------------------------------------
   GpuClientOptions gpu_opts;
-  gpu_opts.mock_gpu_topology = "1x1x2";
-  gpu_opts.enable_mock_nccl = true;
+  // gpu_opts.mock_gpu_topology = "1x1x2";
+  // gpu_opts.enable_mock_nccl = true;
 
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<PjRtClient> client_uptr, GetStreamExecutorGpuClient(gpu_opts));
   PjRtClient &client = *client_uptr;
 
-  CompileOptions copts;
-  ExecutableBuildOptions &ebopts = copts.executable_build_options;
-  ebopts.set_num_replicas(2);
-  ebopts.set_device_ordinal(0); // First GPU as target device (both replicas run here if single‑GPU)
+  const auto compile_for_device = [&](const int ordinal) -> std::unique_ptr<PjRtLoadedExecutable> {
+    CompileOptions copts;
+    ExecutableBuildOptions &ebopts = copts.executable_build_options;
+    ebopts.set_num_replicas(2);
+    ebopts.set_device_ordinal(ordinal);
 
-  DebugOptions *dbg = ebopts.mutable_debug_options();
-  dbg->set_xla_gpu_async_dot(true);
-  dbg->set_xla_gpu_multi_streamed_windowed_einsum(true);
-  dbg->set_xla_gpu_enable_latency_hiding_scheduler(true);
-  dbg->set_xla_dump_hlo_as_html(true);
-  dbg->clear_xla_gpu_enable_command_buffer();
-  dbg->add_xla_gpu_enable_command_buffer(xla::DebugOptions::INVALID);
+    DebugOptions *dbg = ebopts.mutable_debug_options();
+    dbg->set_xla_gpu_async_dot(true);
+    dbg->set_xla_gpu_multi_streamed_windowed_einsum(true);
+    dbg->set_xla_gpu_enable_latency_hiding_scheduler(true);
+    dbg->set_xla_dump_hlo_as_html(true);
+    dbg->clear_xla_gpu_enable_command_buffer();
+    dbg->add_xla_gpu_enable_command_buffer(xla::DebugOptions::INVALID);
 
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<PjRtLoadedExecutable> exe, client.Compile(computation, copts));
+    std::unique_ptr<PjRtLoadedExecutable> exe = client.Compile(computation, copts).value();
+    return std::move(exe);
+  };
 
   // -------------------------------------------------------------------------
   // Prepare per‑replica inputs.
@@ -83,7 +86,7 @@ TEST(PJRTReplicasTest, DotAllReduceTwoReplicas) {
   std::vector<float> hostB1(kN * kM, 0.99f);
 
   PjRtDevice *device0 = client.devices()[0];
-  PjRtDevice *device1 = client.devices().size() > 1 ? client.devices()[1] : client.devices()[0]; // Fallback: same GPU.
+  PjRtDevice *device1 = client.devices()[1];
 
   TF_ASSERT_OK_AND_ASSIGN(auto bufA0, VectorToDevice(client, device0, hostA0, mat_shape));
   TF_ASSERT_OK_AND_ASSIGN(auto bufB0, VectorToDevice(client, device0, hostB0, mat_shape));
@@ -98,7 +101,7 @@ TEST(PJRTReplicasTest, DotAllReduceTwoReplicas) {
   // -------------------------------------------------------------------------
   // Execute.
   // -------------------------------------------------------------------------
-  TF_ASSERT_OK_AND_ASSIGN(auto outputs, exe->Execute(args, /*options=*/{}));
+  TF_ASSERT_OK_AND_ASSIGN(auto outputs, compile_for_device(0)->Execute(args, /*options=*/{}));
 
   // Each replica returns a tuple with one element (the reduced matrix).
   ASSERT_EQ(outputs.size(), 2);
