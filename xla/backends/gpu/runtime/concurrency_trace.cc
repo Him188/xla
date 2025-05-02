@@ -1,6 +1,5 @@
 #include "concurrency_trace.h"
 
-#include "dynamic_slice_thunk.h"
 #include "gemm_thunk.h"
 #include "xla/stream_executor/cuda/cuda_event.h"
 
@@ -19,7 +18,7 @@ static const stream_executor::gpu::CudaEvent& AssertCuda(
 //     const se::Stream* stream) {
 //   return *dynamic_cast<const stream_executor::gpu::CudaStream*>(stream);
 // }
-// static const stream_executor::gpu::CudaStream& AssertCuda(
+// static const stream_executor::gpu::CuQuoted sentences onlydaStream& AssertCuda(
 //     const se::Stream& stream) {
 //   return AssertCuda(&stream);
 // }
@@ -48,8 +47,6 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
                          t->rhs_buffer());
     AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
                           t->output_buffer());
-  } else if (THUNK_CASE(DynamicSliceThunk)) {
-    // TODO
   }
 }
 void ConcurrencyTracer::OnStreamEventRecord(const se::Stream& stream,
@@ -193,7 +190,7 @@ ConcurrencyTracer::EdgeList ConcurrencyTracer::BuildHappensBeforeGraph() const {
   EdgeList hb;
   auto add_edge = [&](size_t a, size_t b) { hb[a].insert(b); };
 
-  // (1) program order — consecutive records on the same stream
+  // program order: consecutive records on the same stream
   absl::flat_hash_map<void*, size_t> last_seen_on_stream;
   for (size_t i = 0; i < trace_.size(); ++i) {
     if (auto* t = dynamic_cast<const BufferRead*>(trace_[i].get()); t) {
@@ -220,7 +217,7 @@ ConcurrencyTracer::EdgeList ConcurrencyTracer::BuildHappensBeforeGraph() const {
     }
   }
 
-  // (2) event edges — Record → Wait on the *same* event id
+  // event edges: Record -> Wait on the *same* event id
   absl::flat_hash_map<void*, size_t> record_pos;
   for (size_t i = 0; i < trace_.size(); ++i) {
     if (auto* rec = dynamic_cast<const EventRecord*>(trace_[i].get()); rec) {

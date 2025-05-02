@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "xla/backends/gpu/runtime/sequential_thunk.h"
 
+#include "concurrency_trace.h"
+
 #include <memory>
 #include <optional>
 #include <string>
@@ -82,6 +84,10 @@ absl::Status SequentialThunk::ExecuteOnStream(const ExecuteParams& params) {
         GetKernelAnnotation(thunk->profile_annotation());
     if (params.mock_collectives && thunk->IsCollective()) {
       continue;
+    }
+
+    if (const auto tracer = params.concurrency_tracer) {
+      tracer->OnThunkLaunch(*thunk, params);
     }
     TF_RETURN_IF_ERROR(thunk->ExecuteOnStream(params));
   }

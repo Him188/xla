@@ -48,7 +48,7 @@ cc_library(
     deps = [
         ":thunk",
         "//xla/backends/gpu/runtime:gemm_thunk",
-        "//xla/backends/gpu/runtime:dynamic_slice_thunk",
+        #        "//xla/backends/gpu/runtime:dynamic_slice_thunk",
         "//xla/backends/gpu/runtime:wait_for_streams_thunk",
         "//xla/stream_executor/cuda:cuda_event",
         #        "//xla/stream_executor/cuda:cuda_stream",
@@ -1095,6 +1095,7 @@ cc_library(
     ]),
     deps = [
         ":annotation",
+        ":concurrency_tracer",
         ":thunk",
         "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/status",

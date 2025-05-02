@@ -343,7 +343,7 @@ absl::Status ExecuteThunks(
 
   // Assign names for the streams
   main_stream->SetName("Compute0");
-  for (auto &[id, stream] : additional_execution_streams) {
+  for (auto& [id, stream] : additional_execution_streams) {
     stream->SetName("Compute" + std::to_string(id.value()));
   }
   command_buffer_trace_stream->SetName("CommandBufferTrace");
@@ -355,22 +355,15 @@ absl::Status ExecuteThunks(
       std::move(additional_execution_streams));
 
   for (int i = 0; i < kAsyncStreamTotal; ++i) {
-    async_comms_streams[i]->SetName("Async"+i);
+    async_comms_streams[i]->SetName("Async" + i);
   }
 
   // Set concurrency tracer for stream executor
-    for (const std::unique_ptr<Thunk>& thunk : thunk_sequence.thunks()) {
-      const auto stream_executor = execute_params.stream->parent();
-      if (const auto cuda_executor =
-              dynamic_cast<stream_executor::gpu::CudaExecutor*>(
-                  stream_executor)) {
-        cuda_executor->SetConcurrencyTracer(execute_params.concurrency_tracer);
-                  }
-
-      if (const auto tracer = execute_params.concurrency_tracer) {
-        tracer->OnThunkLaunch(*thunk.get(), execute_params);
-      }
-    }
+  const auto stream_executor = execute_params.stream->parent();
+  if (const auto cuda_executor =
+          dynamic_cast<stream_executor::gpu::CudaExecutor*>(stream_executor)) {
+    cuda_executor->SetConcurrencyTracer(execute_params.concurrency_tracer);
+  }
   TF_RETURN_IF_ERROR(thunk_sequence.ExecuteOnStream(execute_params));
 
   return MaybeSyncAndProfile(run_options, execution_timer.get(),
