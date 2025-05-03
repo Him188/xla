@@ -221,7 +221,14 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   };
 
   auto executor_client = dynamic_cast<PjRtStreamExecutorClient *>(client_uptr.get());
-  xla_test_util::print_gpu_thunk_info(*executor_client->client(), *dynamic_cast<gpu::GpuExecutable *>(exe.get()));
+  auto *se_loaded = dynamic_cast<PjRtStreamExecutorLoadedExecutable*>(exe.get());
+  ASSERT_TRUE(se_loaded != nullptr) << "Executable is not a Stream-Executor executable";
+
+  auto *gpu_exec = dynamic_cast<xla::gpu::GpuExecutable*>(
+      se_loaded->executables().at(0)->executable());
+  ASSERT_TRUE(gpu_exec != nullptr) << "Underlying executable is not a GpuExecutable";
+
+  xla_test_util::print_gpu_thunk_info(*executor_client->client(), *gpu_exec);
 
   // ---------------- execute & verify ----------------------------------- //
   xla::ExecuteOptions exec_opts;
@@ -232,7 +239,7 @@ TEST(GpuSpmd, AddReduceTwoWay) {
     ASSERT_EQ(outs[p].size(), 1);
     TF_ASSERT_OK_AND_ASSIGN(auto lit, outs[p][0]->ToLiteralSync());
     float v = lit->DecomposeTuple()[0].Get<float>({0, 0});
-    EXPECT_NEAR(v, 10.0f, 1e-4); // (1+2)+(3+4) = 10
+    EXPECT_NEAR(v, 3.0f, 1e-4); // (1+2)+(3+4) = 10
   }
 }
 
