@@ -184,3 +184,21 @@ xla_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+xla_test(
+    name = "send_recv",
+    srcs = [
+        "send_recv.cc",
+    ],
+    deps = [
+        "test_util",
+        "//xla/tests:hlo_test_base",
+        "//xla:test",
+        "//xla/hlo/testlib:test",
+        "//xla/tools/hlo_opt:gpu_opt",
+        #        "//xla/service/gpu:gpu_compiler",  # CUDA compiler
+        "//xla/tsl/lib/core:status_test_util",
+        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
