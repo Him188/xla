@@ -180,7 +180,7 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   eb.set_num_replicas(1);
   eb.set_num_partitions(2);
   // eb.set_device_ordinal(-1);
-  // eb.set_use_spmd_partitioning(true);
+  eb.set_use_spmd_partitioning(true);
 
   TF_ASSERT_OK_AND_ASSIGN(auto da, client.GetDefaultDeviceAssignment(/*repl=*/1, /*part=*/2));
   eb.set_device_assignment(da);
