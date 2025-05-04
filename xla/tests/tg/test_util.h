@@ -50,11 +50,29 @@ void EnableLogs();
 void PrintIrDumps(const std::string &dump_dir, const std::vector<IRDumpKind> &kinds);
 
 // Creates a buffer on the device from host data.
-std::unique_ptr<PjRtBuffer> CreateDeviceBuffer(PjRtClient &client, absl::Span<const float> host_data, const Shape &shape, int device_ordinal= 0);
+std::unique_ptr<PjRtBuffer> CreateDeviceBuffer(PjRtClient &client, absl::Span<const float> host_data, const Shape &shape, int device_ordinal = 0);
 
 void print_gpu_thunk_sequence(se::StreamExecutor *stream_executor, const gpu::ThunkSequence &thunk_sequence, int &idx, int depth = 0);
 
 void print_gpu_thunk_info(const LocalClient &client, gpu::GpuExecutable &gpu_exec);
+inline void print_gpu_thunk_info(const LocalClient &client, gpu::GpuExecutable *gpu_exec) {
+  ASSERT_TRUE(gpu_exec != nullptr) << "Underlying executable is not a GpuExecutable";
+  // ReSharper disable once CppDFANullDereference
+  return print_gpu_thunk_info(client, *gpu_exec);
+}
+inline void print_gpu_thunk_info(const LocalClient &client, const absl::Span<const std::shared_ptr<LocalExecutable>> executables) {
+  for (auto ptr : executables) {
+    if (auto *executable = ptr.get()->executable(); executable != nullptr) {
+      auto *exec = dynamic_cast<gpu::GpuExecutable *>(executable);
+      if (exec == nullptr)
+        continue;
+
+      std::cout << "\n=== GpuExecutable: " << exec->module().name() << " ===" << std::endl;
+      print_gpu_thunk_info(client, exec);
+      std::cout << std::endl;
+    }
+  }
+}
 
 std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> compile_and_execute(PjRtStreamExecutorClient &pjrt_client, const XlaComputation &computation,
                                                                           absl::Span<const std::vector<PjRtBuffer *>> argument_handles = {{}},

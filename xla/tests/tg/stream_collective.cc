@@ -140,6 +140,13 @@ void SetLiteralValue(Literal &dest, absl::Span<const float> src, int64_t src_row
 }
 
 TEST(GpuSpmd, AddReduceTwoWay) {
+  setenv("NCCL_DEBUG", "WARN", 1);
+  // 1.  prepare dump directory
+  std::string dump_dir = ::testing::TempDir() + "/xla_dump";
+  std::filesystem::create_directory(dump_dir);
+  xla_test_util::SetXlaDumpFlags(dump_dir);
+  // xla_test_util::EnableLogs();
+
   constexpr int64_t N = 1024, M = 1024;
   const xla::Shape mat_shape = ShapeUtil::MakeShape(F32, {N, M});
   const xla::Shape slice_shape = ShapeUtil::MakeShape(F32, {N / 2, M});
@@ -157,7 +164,7 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   xla::XlaOp add = xla::Add(A, B);
   xla::XlaComputation add_fn = xla::CreateScalarAddComputation(F32, &builder);
   xla::XlaOp ar = xla::AllReduce(add, add_fn); // across *partitions*
-  xla::XlaOp root = xla::Tuple(&builder, {ar});
+  xla::XlaOp root = xla::Tuple(&builder, {ar + ar});
 
   TF_ASSERT_OK_AND_ASSIGN(auto computation, builder.Build(root));
 
@@ -173,7 +180,7 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   eb.set_num_replicas(1);
   eb.set_num_partitions(2);
   // eb.set_device_ordinal(-1);
-  eb.set_use_spmd_partitioning(true);
+  // eb.set_use_spmd_partitioning(true);
 
   TF_ASSERT_OK_AND_ASSIGN(auto da, client.GetDefaultDeviceAssignment(/*repl=*/1, /*part=*/2));
   eb.set_device_assignment(da);
@@ -198,16 +205,16 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   xla::PjRtDevice *dev1 = client.addressable_devices()[1];
 
   Literal literalA0(slice_shape);
-  SetLiteralValue(literalA0, host, 0);
+  SetLiteralValue(literalA0, host, 0); // literalA0[*] = 1
 
   Literal literalB0(slice_shape);
-  SetLiteralValue(literalB0, hostB, 0);
+  SetLiteralValue(literalB0, hostB, 0); // literalB0[*] = 2
 
   Literal literalA1(slice_shape);
-  SetLiteralValue(literalA1, host, N / 2);
+  SetLiteralValue(literalA1, host, N / 2); // literalA1[*] = 3
 
   Literal literalB1(slice_shape);
-  SetLiteralValue(literalB1, hostB, N / 2);
+  SetLiteralValue(literalB1, hostB, N / 2); // literalB1[*] = 4
 
   TF_ASSERT_OK_AND_ASSIGN(auto bufA0, client.BufferFromHostLiteral(literalA0, dev0->default_memory_space().value()));
   TF_ASSERT_OK_AND_ASSIGN(auto bufB0, client.BufferFromHostLiteral(literalB0, dev0->default_memory_space().value()));
@@ -216,19 +223,18 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   TF_ASSERT_OK_AND_ASSIGN(auto bufB1, client.BufferFromHostLiteral(literalB1, dev1->default_memory_space().value()));
 
   std::vector<std::vector<xla::PjRtBuffer *>> args = {
+      // 1, 2
       {bufA0.get(), bufB0.get()}, // partition 0
-      {bufA1.get(), bufB1.get()}  // partition 1
+
+      // 3, 4
+      {bufA1.get(), bufB1.get()} // partition 1
   };
 
   auto executor_client = dynamic_cast<PjRtStreamExecutorClient *>(client_uptr.get());
-  auto *se_loaded = dynamic_cast<PjRtStreamExecutorLoadedExecutable*>(exe.get());
+  auto *se_loaded = dynamic_cast<PjRtStreamExecutorLoadedExecutable *>(exe.get());
   ASSERT_TRUE(se_loaded != nullptr) << "Executable is not a Stream-Executor executable";
 
-  auto *gpu_exec = dynamic_cast<xla::gpu::GpuExecutable*>(
-      se_loaded->executables().at(0)->executable());
-  ASSERT_TRUE(gpu_exec != nullptr) << "Underlying executable is not a GpuExecutable";
-
-  xla_test_util::print_gpu_thunk_info(*executor_client->client(), *gpu_exec);
+  xla_test_util::print_gpu_thunk_info(*executor_client->client(), se_loaded->executables());
 
   // ---------------- execute & verify ----------------------------------- //
   xla::ExecuteOptions exec_opts;
@@ -239,8 +245,10 @@ TEST(GpuSpmd, AddReduceTwoWay) {
     ASSERT_EQ(outs[p].size(), 1);
     TF_ASSERT_OK_AND_ASSIGN(auto lit, outs[p][0]->ToLiteralSync());
     float v = lit->DecomposeTuple()[0].Get<float>({0, 0});
-    EXPECT_NEAR(v, 3.0f, 1e-4); // (1+2)+(3+4) = 10
+    EXPECT_NEAR(v, 6.0f, 1e-4); // (1+2)+(3+4) = 10
   }
+
+  xla_test_util::PrintIrDumps(dump_dir, {xla_test_util::IRDumpKind::kHLO, xla_test_util::IRDumpKind::kHTML});
 }
 
 static constexpr int kSrcDevice = 0;

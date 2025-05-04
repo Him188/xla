@@ -31,8 +31,8 @@ void xla_test_util::SetXlaDumpFlags(const std::string &dump_dir) {
 
 void xla_test_util::EnableLogs() {
   setenv("TF_CPP_MIN_VLOG_LEVEL", "0", 1);
-  setenv("TF_CPP_MAX_VLOG_LEVEL", "10", 1);
-  setenv("TF_CPP_VMODULE", "xla_service=2,xla_compilation_cache=1,gpu_compiler=3,command_buffer_thunk=3,async_wrapper.cc=3", 1);
+  // setenv("TF_CPP_MAX_VLOG_LEVEL", "10", 1);
+  setenv("TF_CPP_VMODULE", "xla_service=2,xla_compilation_cache=1,gpu_compiler=3,command_buffer_thunk=3,async_wrapper.cc=3,xla/backends/gpu/collectives/nccl_communicator.cc=10", 1);
 }
 
 void xla_test_util::PrintIrDumps(const std::string &dump_dir, const std::vector<IRDumpKind> &kinds) {
