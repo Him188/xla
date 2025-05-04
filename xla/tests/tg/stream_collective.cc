@@ -152,7 +152,7 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   // builder.ClearSharding();
 
   XlaOp plusAcc = AllReduce(A + B, CreateScalarAddComputation(F32, &builder));
-  XlaOp mulAcc = AllReduce(A * B, CreateScalarAddComputation(F32, &builder));
+  XlaOp mulAcc = AllReduce(plusAcc * A, CreateScalarAddComputation(F32, &builder));
   XlaOp root = Tuple(&builder, {plusAcc * mulAcc});
 
   TF_ASSERT_OK_AND_ASSIGN(auto computation, builder.Build(root));
@@ -173,7 +173,7 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   eb.set_device_assignment(da);
 
   auto *dbg = eb.mutable_debug_options();
-  // dbg->set_xla_gpu_enable_latency_hiding_scheduler(true);
+  dbg->set_xla_gpu_enable_latency_hiding_scheduler(true);
   dbg->set_xla_gpu_dump_llvmir(true);
   dbg->set_xla_gpu_enable_pipelined_collectives(true);
 
@@ -199,7 +199,9 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   print_gpu_thunk_info(exe.get());
 
   // ---------------- execute & verify ----------------------------------- //
+  gpu::ConcurrencyTracer tracer;
   ExecuteOptions exec_opts;
+  exec_opts.gpu_concurrency_tracer = &tracer;
   auto outs = exe->Execute(args, exec_opts).value();
 
   ASSERT_EQ(outs.size(), 2);
@@ -207,10 +209,13 @@ TEST(GpuSpmd, AddReduceTwoWay) {
     ASSERT_EQ(outs[p].size(), 1);
     TF_ASSERT_OK_AND_ASSIGN(auto lit, outs[p][0]->ToLiteralSync());
     float v = lit->DecomposeTuple()[0].Get<float>({0, 0});
-    EXPECT_NEAR(v, 24.0f, 1e-4); // (1+2)+(3+4) = 10, *2 = 20
+    EXPECT_NEAR(v, 400.0f, 1e-4); // (1+2)+(3+4) = 10, *2 = 20
   }
 
   PrintIrDumps(dump_dir, {IRDumpKind::kHLO, IRDumpKind::kHTML});
+
+  tracer.PrintTraces(std::cout);
+  tracer.PrintDataRaces(std::cout);
 }
 } // namespace
 
