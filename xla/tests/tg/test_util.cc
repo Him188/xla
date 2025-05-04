@@ -32,7 +32,9 @@ void xla_test_util::SetXlaDumpFlags(const std::string &dump_dir) {
 void xla_test_util::EnableLogs() {
   setenv("TF_CPP_MIN_VLOG_LEVEL", "0", 1);
   // setenv("TF_CPP_MAX_VLOG_LEVEL", "10", 1);
-  setenv("TF_CPP_VMODULE", "xla_service=2,xla_compilation_cache=1,gpu_compiler=3,command_buffer_thunk=3,async_wrapper.cc=3,xla/backends/gpu/collectives/nccl_communicator.cc=10", 1);
+  setenv("TF_CPP_VMODULE",
+         "xla_service=2,xla_compilation_cache=1,gpu_compiler=3,command_buffer_thunk=3,async_wrapper.cc=3,xla/backends/gpu/collectives/nccl_communicator.cc=10",
+         1);
 }
 
 void xla_test_util::PrintIrDumps(const std::string &dump_dir, const std::vector<IRDumpKind> &kinds) {
@@ -210,6 +212,29 @@ tsl::StatusOr<std::shared_ptr<Literal>> buffer_to_literal(const std::unique_ptr<
     return buffer_to_literal(*buffer);
   }
   return InvalidArgument("Buffer is null");
+}
+void SetLiteralValue(Literal &dest, const absl::Span<const float> src, const int64_t src_row_start) {
+  const xla::Shape &shape = dest.shape();
+  const int64_t rows_per_part = shape.dimensions(0);
+  const int64_t cols = shape.dimensions(1);
+
+  for (int64_t i = 0; i < rows_per_part; ++i) {
+    for (int64_t j = 0; j < cols; ++j) {
+      dest.Set<float>({i, j}, src[(src_row_start + i) * cols + j]);
+    }
+  }
+}
+std::pair<std::unique_ptr<PjRtBuffer>, Literal> CreateDeviceBuffer(PjRtClient &client, const Shape shape, const float value, const PjRtDevice &device) {
+  Literal literal(shape);
+  std::vector<float> host;
+  host.resize(shape.dimensions(0) * shape.dimensions(1), value);
+  SetLiteralValue(literal, host, 0);
+
+  std::pair<std::unique_ptr<PjRtBuffer>, Literal> pair = std::make_pair(nullptr, std::move(literal));
+
+  auto buffer = client.BufferFromHostLiteral(pair.second, device.default_memory_space().value()).value();
+  pair.first = std::move(buffer);
+  return pair;
 }
 
 } // namespace xla_test_util

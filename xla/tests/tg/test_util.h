@@ -49,7 +49,7 @@ void EnableLogs();
  */
 void PrintIrDumps(const std::string &dump_dir, const std::vector<IRDumpKind> &kinds);
 
-// Creates a buffer on the device from host data.
+// Creates a buffer on the device from host data. Note: you must hold the host_data until the buffer is not needed.
 std::unique_ptr<PjRtBuffer> CreateDeviceBuffer(PjRtClient &client, absl::Span<const float> host_data, const Shape &shape, int device_ordinal = 0);
 
 void print_gpu_thunk_sequence(se::StreamExecutor *stream_executor, const gpu::ThunkSequence &thunk_sequence, int &idx, int depth = 0);
@@ -73,6 +73,26 @@ inline void print_gpu_thunk_info(const LocalClient &client, const absl::Span<con
     }
   }
 }
+inline void print_gpu_thunk_info(const PjRtLoadedExecutable *executable) {
+  const auto *se_loaded = dynamic_cast<const PjRtStreamExecutorLoadedExecutable *>(executable);
+  ASSERT_TRUE(se_loaded != nullptr) << "Executable is not a Stream-Executor executable";
+  const auto executor_client = dynamic_cast<PjRtStreamExecutorClient *>(executable->client());
+  ASSERT_TRUE(executor_client != nullptr) << "Executable client is not a Stream-Executor client";
+  const LocalClient *local_client = executor_client->client();
+  ASSERT_TRUE(local_client != nullptr) << "Local client is null";
+  print_gpu_thunk_info(*local_client, se_loaded->executables());
+}
+inline LocalClient *GetLocalClient(PjRtClient *pjrt) {
+  const auto executor_client = dynamic_cast<PjRtStreamExecutorClient *>(pjrt);
+  if (executor_client == nullptr) {
+    throw std::runtime_error("Executable client is not a Stream-Executor client");
+  }
+  LocalClient *local_client = executor_client->client();
+  if (local_client == nullptr) {
+    throw std::runtime_error("Local client is null");
+  }
+  return local_client;
+}
 
 std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> compile_and_execute(PjRtStreamExecutorClient &pjrt_client, const XlaComputation &computation,
                                                                           absl::Span<const std::vector<PjRtBuffer *>> argument_handles = {{}},
@@ -81,6 +101,10 @@ std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> compile_and_execute(PjRtSt
 tsl::StatusOr<std::shared_ptr<Literal>> buffer_to_literal(PjRtBuffer &buffer);
 
 tsl::StatusOr<std::shared_ptr<Literal>> buffer_to_literal(const std::unique_ptr<PjRtBuffer> &buffer);
+
+auto SetLiteralValue(Literal &dest, absl::Span<const float> src, int64_t src_row_start) -> void;
+
+std::pair<std::unique_ptr<PjRtBuffer>, Literal> CreateDeviceBuffer(PjRtClient &client, const Shape shape, const float value, const PjRtDevice &device);
 
 } // namespace xla::xla_test_util
 
