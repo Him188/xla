@@ -127,6 +127,62 @@ TEST(PJRTReplicasTest, DotAllReduceTwoReplicas) {
   }
 }
 
+XlaComputation BuildWhileAllReduceComputation() {
+  constexpr int64_t N = 1024, M = 1024;
+  const Shape s32_shape = ShapeUtil::MakeShape(xla::S32, {});
+  const Shape mat_shape = ShapeUtil::MakeShape(F32, {N, M});
+
+  XlaBuilder top("add_allreduce_loop");
+
+  // Feed-in matrices for the *first* iteration.
+  XlaOp A0 = Parameter(&top, 0, mat_shape, "A");
+  XlaOp B0 = Parameter(&top, 1, mat_shape, "B");
+  XlaOp iter0 = xla::ConstantR0<int32_t>(&top, 0);
+
+  // Tuple<iter, A, B> becomes the loop-carried state.
+  XlaOp init_state = Tuple(&top, {iter0, A0, B0});
+
+  // ---------------- loop condition --------------------------------------- //
+  XlaBuilder cond_b("cond");
+  {
+    constexpr int32_t kLoopTripCount = 8;
+    XlaOp p = Parameter(&cond_b, 0, ShapeUtil::MakeTupleShape({s32_shape, mat_shape, mat_shape}), "state");
+    XlaOp iter = GetTupleElement(p, 0);
+    Lt(iter, xla::ConstantR0<int32_t>(&cond_b, kLoopTripCount));
+  }
+  XlaComputation cond = cond_b.Build().value();
+
+  // ---------------- loop body -------------------------------------------- //
+  XlaBuilder body_b("body");
+  XlaOp next_state;
+  {
+    XlaOp p = Parameter(&body_b, 0, ShapeUtil::MakeTupleShape({s32_shape, mat_shape, mat_shape}), "state");
+    XlaOp iter = GetTupleElement(p, 0);
+    XlaOp A = GetTupleElement(p, 1);
+    XlaOp B = GetTupleElement(p, 2);
+
+    // --- your original computation ------------------------------------- //
+    XlaOp add_acc = AllReduce(A + B, CreateScalarAddComputation(F32, &body_b));
+    XlaOp mul_acc = AllReduce(add_acc * A, CreateScalarAddComputation(F32, &body_b));
+
+    // Feed results forward to preserve true dependencies between
+    // successive iterations – required for pipelining legality.
+    XlaOp next_iter = iter + xla::ConstantR0<int32_t>(&body_b, 1);
+    next_state = Tuple(&body_b, {next_iter, add_acc, mul_acc});
+    // Return the updated tuple
+  }
+  XlaComputation body = body_b.Build(next_state).value();
+
+  // ---------------- close the loop & module root ------------------------- //
+  XlaOp final_state = While(cond, body, init_state);
+  XlaOp final_A = GetTupleElement(final_state, 1);
+  XlaOp final_B = GetTupleElement(final_state, 2);
+  XlaOp root = Tuple(&top, {final_A * final_B});
+
+  auto hlo = top.Build(root).value();
+  return hlo;
+}
+
 TEST(GpuSpmd, AddReduceTwoWay) {
   setenv("NCCL_DEBUG", "WARN", 1);
   // 1.  prepare dump directory
@@ -134,6 +190,11 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   std::filesystem::create_directory(dump_dir);
   xla_test_util::SetXlaDumpFlags(dump_dir);
   // xla_test_util::EnableLogs();
+
+  // shard inputs row-wise : {devices=[2,1] 0,1}
+  // auto shard_proto = HloSharding::IotaTile({2, 1}).ToProto();
+  // builder.SetSharding(shard_proto);
+  // builder.ClearSharding();
 
   using namespace xla_test_util;
 
@@ -175,7 +236,16 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   auto *dbg = eb.mutable_debug_options();
   dbg->set_xla_gpu_enable_latency_hiding_scheduler(true);
   dbg->set_xla_gpu_dump_llvmir(true);
+  dbg->set_xla_dump_hlo_as_html(true);
   dbg->set_xla_gpu_enable_pipelined_collectives(true);
+  dbg->set_xla_gpu_enable_pipelined_all_reduce(true);
+  dbg->set_xla_gpu_enable_highest_priority_async_stream(true);
+
+  dbg->clear_xla_gpu_enable_command_buffer();
+  dbg->add_xla_gpu_enable_command_buffer(DebugOptions_CommandBufferCmdType_INVALID);
+
+  // dbg->set_xla_gpu_all_reduce_combine_threshold_bytes(0);
+  dbg->set_xla_gpu_enable_nccl_user_buffers(true);
 
   TF_ASSERT_OK_AND_ASSIGN(auto exe, client.Compile(computation, copts));
 
@@ -196,13 +266,13 @@ TEST(GpuSpmd, AddReduceTwoWay) {
       {bufferA1.get(), bufferB1.get()}  // replica 1
   };
 
-  print_gpu_thunk_info(exe.get());
-
   // ---------------- execute & verify ----------------------------------- //
   gpu::ConcurrencyTracer tracer;
   ExecuteOptions exec_opts;
   exec_opts.gpu_concurrency_tracer = &tracer;
   auto outs = exe->Execute(args, exec_opts).value();
+
+  print_gpu_thunk_info(exe.get());
 
   ASSERT_EQ(outs.size(), 2);
   for (int p = 0; p < 2; ++p) {
@@ -212,7 +282,7 @@ TEST(GpuSpmd, AddReduceTwoWay) {
     EXPECT_NEAR(v, 400.0f, 1e-4); // (1+2)+(3+4) = 10, *2 = 20
   }
 
-  PrintIrDumps(dump_dir, {IRDumpKind::kHLO, IRDumpKind::kHTML});
+  PrintIrDumps(dump_dir, {IRDumpKind::kHTML});
 
   tracer.PrintTraces(std::cout);
   tracer.PrintDataRaces(std::cout);
