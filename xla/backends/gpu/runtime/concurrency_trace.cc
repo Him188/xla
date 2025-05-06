@@ -124,11 +124,13 @@ std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
   std::vector<MemAccessInfo> accesses;
   for (size_t i = 0; i < trace_.size(); ++i) {
     if (const auto* r = dynamic_cast<const BufferRead*>(trace_[i].get()); r) {
-      accesses.push_back({r->stream_id, r->buffer, AccessKind::kRead, i, r->source});
+      accesses.push_back(
+          {r->stream_id, r->buffer, AccessKind::kRead, i, r->source});
     } else if (const auto* w =
                    dynamic_cast<const BufferWrite*>(trace_[i].get());
                w) {
-      accesses.push_back({w->stream_id, w->buffer, AccessKind::kWrite, i, w->source});
+      accesses.push_back(
+          {w->stream_id, w->buffer, AccessKind::kWrite, i, w->source});
     }
   }
 
@@ -177,17 +179,17 @@ std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
 std::ostream& operator<<(std::ostream& os,
                          const ConcurrencyTracer::SourceInfo& source) {
   if (source.thunk) {
-    os << "Thunk: " << source.thunk->profile_annotation();
+    os << source.thunk->profile_annotation();
   } else {
     os << "<unknown thunk>";
   }
-  os << "(";
-  if (!source.instruction.empty()) {
-    os << "Hlo: " << source.instruction;
-  } else {
-    os << "<unknown source>";
-  }
-  os << ")";
+  // os << "(";
+  // if (!source.instruction.empty()) {
+  //   os << "Hlo: " << source.instruction;
+  // } else {
+  //   os << "<unknown source>";
+  // }
+  // os << ")";
   return os;
 }
 
@@ -200,13 +202,17 @@ void ConcurrencyTracer::PrintDataRaces(std::ostream& os) const {
   os << "❌  Detected " << races.size() << " data-race"
      << (races.size() == 1 ? "" : "s") << ":\n";
   for (const auto& r : races) {
-    os << "  • Buffer @" << std::hex << r.buffer().allocation()->index()
-       << std::dec << " accessed at trace[" << r.first.trace_idx << "] ("
-       << (r.first.IsWrite() ? "W" : "R") << ") and trace["
-       << r.second.trace_idx << "] (" << (r.second.IsWrite() ? "W" : "R")
-       << ") without ordering.\n";
-    os << "    First access: " << r.first.source << "\n";
-    os << "    Second access: " << r.second.source << "\n";
+    os << "  • Buffer @" << r.buffer().allocation()->index()
+       << " accessed "
+       // << "at trace[" << r.first.trace_idx << "] ("
+       // << (r.first.IsWrite() ? "W" : "R") << ") and trace["
+       // << r.second.trace_idx << "] (" << (r.second.IsWrite() ? "W" : "R")
+       // << ") "
+       << "without ordering.\n";
+    os << "    " << (r.first.IsWrite() ? "Write" : "Read")
+       << " access: " << r.first.source << "\n";
+    os << "    " << (r.second.IsWrite() ? "Write" : "Read")
+       << " access: " << r.second.source << "\n";
   }
 }
 
