@@ -347,6 +347,7 @@ Thunk::ThunkInfo Thunk::ThunkInfo::WithProfileAnnotation(
     const HloInstruction* instr) {
   ThunkInfo thunk_info;
   thunk_info.profile_annotation = instr->name();
+  thunk_info.source_instruction = instr->ToString();
   auto gpu_backend_config = instr->backend_config<GpuBackendConfig>();
   if (gpu_backend_config.ok()) {
     thunk_info.execution_stream_id =

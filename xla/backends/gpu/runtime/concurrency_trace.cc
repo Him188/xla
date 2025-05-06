@@ -1,4 +1,5 @@
 #include "concurrency_trace.h"
+#include "concurrency_trace.h"
 
 #include "gemm_thunk.h"
 #include "xla/stream_executor/cuda/cuda_event.h"
@@ -18,7 +19,8 @@ static const stream_executor::gpu::CudaEvent& AssertCuda(
 //     const se::Stream* stream) {
 //   return *dynamic_cast<const stream_executor::gpu::CudaStream*>(stream);
 // }
-// static const stream_executor::gpu::CuQuoted sentences onlydaStream& AssertCuda(
+// static const stream_executor::gpu::CuQuoted sentences onlydaStream&
+// AssertCuda(
 //     const se::Stream& stream) {
 //   return AssertCuda(&stream);
 // }
@@ -40,13 +42,14 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
                    ->GetName()
             << ": " << Thunk::KindToString(thunk.kind()) << std::endl;
 
+  SourceInfo source{&thunk};
   if (THUNK_CASE(GemmThunk)) {
     AddTrace<BufferRead>(stream->platform_specific_handle().stream,
-                         t->lhs_buffer());
+                         t->lhs_buffer(), source);
     AddTrace<BufferRead>(stream->platform_specific_handle().stream,
-                         t->rhs_buffer());
+                         t->rhs_buffer(), source);
     AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
-                          t->output_buffer());
+                          t->output_buffer(), source);
   }
 }
 void ConcurrencyTracer::OnStreamEventRecord(const se::Stream& stream,
@@ -121,9 +124,11 @@ std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
   std::vector<MemAccessInfo> accesses;
   for (size_t i = 0; i < trace_.size(); ++i) {
     if (const auto* r = dynamic_cast<const BufferRead*>(trace_[i].get()); r) {
-      accesses.push_back({r->stream_id, r->buffer, AccessKind::kRead, i});
-    } else if (const auto* w = dynamic_cast<const BufferWrite*>(trace_[i].get()); w) {
-      accesses.push_back({w->stream_id, w->buffer, AccessKind::kWrite, i});
+      accesses.push_back({r->stream_id, r->buffer, AccessKind::kRead, i, r->source});
+    } else if (const auto* w =
+                   dynamic_cast<const BufferWrite*>(trace_[i].get());
+               w) {
+      accesses.push_back({w->stream_id, w->buffer, AccessKind::kWrite, i, w->source});
     }
   }
 
@@ -162,14 +167,30 @@ std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
       // If neither happens-before the other, we have a race.
       if (!happens_before(a.trace_idx, b.trace_idx) &&
           !happens_before(b.trace_idx, a.trace_idx)) {
-        races.push_back({a.buffer, a.trace_idx, b.trace_idx,
-                         a.kind == AccessKind::kWrite,
-                         b.kind == AccessKind::kWrite});
+        races.push_back({a, b});
       }
     }
   }
   return races;
 }
+
+std::ostream& operator<<(std::ostream& os,
+                         const ConcurrencyTracer::SourceInfo& source) {
+  if (source.thunk) {
+    os << "Thunk: " << source.thunk->profile_annotation();
+  } else {
+    os << "<unknown thunk>";
+  }
+  os << "(";
+  if (!source.instruction.empty()) {
+    os << "Hlo: " << source.instruction;
+  } else {
+    os << "<unknown source>";
+  }
+  os << ")";
+  return os;
+}
+
 void ConcurrencyTracer::PrintDataRaces(std::ostream& os) const {
   const auto races = DetectDataRaces();
   if (races.empty()) {
@@ -179,10 +200,13 @@ void ConcurrencyTracer::PrintDataRaces(std::ostream& os) const {
   os << "❌  Detected " << races.size() << " data-race"
      << (races.size() == 1 ? "" : "s") << ":\n";
   for (const auto& r : races) {
-    os << "  • Buffer @" << std::hex << r.buffer.allocation()->index()
-       << std::dec << " accessed at trace[" << r.idx1 << "] ("
-       << (r.first_is_write ? "W" : "R") << ") and trace[" << r.idx2 << "] ("
-       << (r.second_is_write ? "W" : "R") << ") without ordering.\n";
+    os << "  • Buffer @" << std::hex << r.buffer().allocation()->index()
+       << std::dec << " accessed at trace[" << r.first.trace_idx << "] ("
+       << (r.first.IsWrite() ? "W" : "R") << ") and trace["
+       << r.second.trace_idx << "] (" << (r.second.IsWrite() ? "W" : "R")
+       << ") without ordering.\n";
+    os << "    First access: " << r.first.source << "\n";
+    os << "    Second access: " << r.second.source << "\n";
   }
 }
 

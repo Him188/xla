@@ -28,13 +28,49 @@ class ConcurrencyTracer {
 
   void PrintTraces(std::ostream& os);
 
-  // Post-mortem analysis -------------------------------------------------
-  struct DataRace {
+  enum class AccessKind { kRead, kWrite };
+
+  struct SourceInfo {
+    const Thunk* thunk = nullptr;
+    const std::string instruction;
+
+    SourceInfo(const Thunk* thunk, const std::string& instruction)
+        : thunk(thunk), instruction(instruction) {}
+    explicit SourceInfo(const Thunk* thunk)
+        : thunk(thunk), instruction(thunk->source_instruction()) {}
+
+    SourceInfo() : instruction("") {}
+  };
+
+  struct MemAccessInfo {
+    void* stream_id;
     BufferAllocation::Slice buffer;
-    size_t idx1;          // position of the first conflicting access in trace_
-    size_t idx2;          // position of the second conflicting access
-    bool first_is_write;  // true ⇔ BufferWrite
-    bool second_is_write;
+    AccessKind kind;
+    size_t trace_idx;  // position inside trace_
+    SourceInfo source;
+
+    MemAccessInfo(void* stream_id, const BufferAllocation::Slice& buffer,
+                  const AccessKind kind, const size_t trace_idx,
+                  const SourceInfo& source)
+        : stream_id(stream_id),
+          buffer(buffer),
+          kind(kind),
+          trace_idx(trace_idx),
+          source(source) {}
+
+    bool IsWrite() const { return kind == AccessKind::kWrite; }
+  };
+
+  struct DataRace {
+    MemAccessInfo first;
+    MemAccessInfo second;
+
+    DataRace(const MemAccessInfo& first, const MemAccessInfo& second)
+        : first(first), second(second) {
+      ABSL_ASSERT(first.buffer == second.buffer && "Buffer mismatch");
+    }
+
+    const BufferAllocation::Slice& buffer() const { return first.buffer; }
   };
 
   // Returns the list of detected races.  Thread-safe, may be called many times.
@@ -45,35 +81,39 @@ class ConcurrencyTracer {
 
  private:
   struct Trace {
+    const SourceInfo source{};
+    explicit Trace(const SourceInfo& source) : source(source) {}
     virtual ~Trace() = default;
   };
   struct BufferRead final : Trace {
     void* stream_id;
     BufferAllocation::Slice buffer;
 
-    explicit BufferRead(void* stream_id, const BufferAllocation::Slice& buffer)
-        : stream_id(stream_id), buffer(buffer) {}
+    explicit BufferRead(void* stream_id, const BufferAllocation::Slice& buffer,
+                        const SourceInfo& source)
+        : Trace(source), stream_id(stream_id), buffer(buffer) {}
   };
   struct BufferWrite final : Trace {
     void* stream_id;
     BufferAllocation::Slice buffer;
 
-    explicit BufferWrite(void* stream_id, const BufferAllocation::Slice& buffer)
-        : stream_id(stream_id), buffer(buffer) {}
+    explicit BufferWrite(void* stream_id, const BufferAllocation::Slice& buffer,
+                         const SourceInfo& source)
+        : Trace(source), stream_id(stream_id), buffer(buffer) {}
   };
   struct WaitForEvent final : Trace {
     void* stream_id;
     void* event_id;
 
     WaitForEvent(void* stream_id, void* event_id)
-        : stream_id(stream_id), event_id(event_id) {}
+        : Trace({}), stream_id(stream_id), event_id(event_id) {}
   };
   struct EventRecord final : Trace {
     void* stream_id;
     void* event_id;
 
     EventRecord(void* stream_id, void* event_id)
-        : stream_id(stream_id), event_id(event_id) {}
+        : Trace({}), stream_id(stream_id), event_id(event_id) {}
   };
 
   std::mutex mutex_{};
@@ -86,15 +126,6 @@ class ConcurrencyTracer {
     std::lock_guard lock(mutex_);
     trace_.emplace_back(std::make_unique<T>(std::forward<Args>(args)...));
   }
-
-  enum class AccessKind { kRead, kWrite };
-
-  struct MemAccessInfo {
-    void* stream_id;
-    BufferAllocation::Slice buffer;
-    AccessKind kind;
-    size_t trace_idx;  // position inside trace_
-  };
 
   using EdgeList = absl::flat_hash_map<size_t, absl::flat_hash_set<size_t>>;
   EdgeList BuildHappensBeforeGraph() const;

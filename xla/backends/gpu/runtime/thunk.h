@@ -196,6 +196,10 @@ class Thunk {
 
     std::string profile_annotation;
 
+    // The source instruction of this Thunk. May be nullptr if tracing is
+    // disabled.
+    std::string source_instruction;
+
     ExecutionStreamId execution_stream_id = kDefaultExecutionStreamId;
   };
 
@@ -213,7 +217,8 @@ class Thunk {
                                    int32_t num_local_participants) = 0;
   };
 
-  //===--------------------------------------------------------------------===//
+  //===----------------------------------------------------------
+  //----------===//
   // CollectiveCliques
   //===--------------------------------------------------------------------===//
 
@@ -437,7 +442,8 @@ class Thunk {
   Thunk(Kind kind, ThunkInfo thunk_info)
       : kind_(kind),
         profile_annotation_(thunk_info.profile_annotation),
-        execution_stream_id_(thunk_info.execution_stream_id) {}
+        execution_stream_id_(thunk_info.execution_stream_id),
+        source_instruction_(thunk_info.source_instruction) {}
   virtual ~Thunk() = default;
   Thunk(const Thunk&) = delete;
   Thunk& operator=(const Thunk&) = delete;
@@ -445,6 +451,9 @@ class Thunk {
   virtual std::string ToString(int indent) const { return ""; }
   Kind kind() const { return kind_; }
   absl::string_view profile_annotation() const { return profile_annotation_; }
+
+  // Returns the string representation of the source HloInstruction. May be empty if tracing is disabled.
+  std::string_view source_instruction() const { return source_instruction_; }
 
   // Prepares thunk for execution.
   //
@@ -506,6 +515,7 @@ class Thunk {
  private:
   Kind kind_;
   std::string profile_annotation_;
+  std::string source_instruction_;
   ExecutionStreamId execution_stream_id_;
 };
 
