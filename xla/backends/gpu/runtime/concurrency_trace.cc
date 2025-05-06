@@ -70,6 +70,10 @@ void ConcurrencyTracer::OnStreamEventRecord(const se::Stream& stream,
 }
 void ConcurrencyTracer::OnStreamEventWait(const se::Stream& stream,
                                           const se::Event& event) {
+
+
+  std::cout << "[Stream] " << "E_" << AssertCuda(event).GetHandle() << "->"
+            << "S_" << stream.GetName() << std::endl;
   AddTrace<WaitForEvent>(stream.platform_specific_handle().stream,
                          static_cast<void*>(AssertCuda(&event).GetHandle()));
 

@@ -92,6 +92,7 @@ limitations under the License.
 #include "tsl/profiler/lib/traceme.h"
 #include "xla/backends/gpu/runtime/concurrency_trace.h"
 #include "xla/stream_executor/cuda/cuda_executor.h"
+#include "xla/stream_executor/cuda/cuda_stream.h"
 
 namespace xla {
 namespace gpu {
@@ -341,23 +342,43 @@ absl::Status ExecuteThunks(
         RendezvousAfterInitialization(run_options, debug_options));
   }
 
-  // Assign names for the streams
+  // Assign names and ConcurrencyTracer for the streams
+
+  const auto concurrency_tracer =
+      run_options->run_options().gpu_concurrency_tracer();
+
+  const auto set_tracer = [&](se::Stream* stream) {
+    if (auto* cuda_stream =
+            dynamic_cast<stream_executor::gpu::CudaStream*>(stream)) {
+      cuda_stream->SetConcurrencyTracer(concurrency_tracer);
+    } else {
+      cuda_stream->SetConcurrencyTracer(nullptr);
+    }
+  };
+
   main_stream->SetName("Compute0");
+  set_tracer(main_stream);
+
   for (auto& [id, stream] : additional_execution_streams) {
     stream->SetName("Compute" + std::to_string(id.value()));
+    set_tracer(stream);
   }
   if (command_buffer_trace_stream) {
     command_buffer_trace_stream->SetName("CommandBufferTrace");
+    set_tracer(command_buffer_trace_stream);
   }
+  for (int i = 0; i < async_comms_streams.size(); ++i) {
+    if (auto* stream = async_comms_streams[i]) {
+      stream->SetName("Async" + i);
+      set_tracer(stream);
+    }
+  }
+
   // Prepare parameters for thunks execution.
   Thunk::ExecuteParams execute_params = Thunk::ExecuteParams::Create(
       *run_options, buffer_allocations, main_stream,
       command_buffer_trace_stream, &collective_params, &collective_cliques,
       std::move(additional_execution_streams));
-
-  for (int i = 0; i < kAsyncStreamTotal; ++i) {
-    async_comms_streams[i]->SetName("Async" + i);
-  }
 
   // Set concurrency tracer for stream executor
   const auto stream_executor = execute_params.stream->parent();

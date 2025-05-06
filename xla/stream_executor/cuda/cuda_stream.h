@@ -77,23 +77,25 @@ class CudaStream : public StreamCommon {
 
   static absl::StatusOr<std::unique_ptr<CudaStream>> Create(
       StreamExecutor* executor,
-      std::optional<std::variant<StreamPriority, int>> priority,
-      xla::gpu::ConcurrencyTracer* concurrency_tracer = nullptr);
+      std::optional<std::variant<StreamPriority, int>> priority);
 
   ~CudaStream() override;
 
   CUstream stream_handle() const { return stream_handle_; }
 
+  void SetConcurrencyTracer(
+      xla::gpu::ConcurrencyTracer* concurrency_tracer) {
+    concurrency_tracer_ = concurrency_tracer;
+  }
+
  private:
   CudaStream(StreamExecutor* executor, CudaEvent completed_event,
              std::optional<std::variant<StreamPriority, int>> priority,
-             CUstream stream_handle,
-             xla::gpu::ConcurrencyTracer* concurrency_tracer)
+             CUstream stream_handle)
       : StreamCommon(executor, priority),
         executor_(executor),
         completed_event_(std::move(completed_event)),
-        stream_handle_(stream_handle),
-        concurrency_tracer_(concurrency_tracer) {}
+        stream_handle_(stream_handle) {}
 
   absl::Status RecordCompletedEvent();
 

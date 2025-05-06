@@ -180,8 +180,7 @@ absl::Status AsynchronousMemcpyD2D(StreamExecutor* executor,
 
 absl::StatusOr<std::unique_ptr<CudaStream>> CudaStream::Create(
     StreamExecutor* executor,
-    std::optional<std::variant<StreamPriority, int>> priority,
-       xla::gpu::ConcurrencyTracer* concurrency_tracer) {
+    std::optional<std::variant<StreamPriority, int>> priority) {
   int stream_priority = [&]() {
     if (priority.has_value() && std::holds_alternative<int>(priority.value())) {
       return std::get<int>(priority.value());
@@ -198,7 +197,7 @@ absl::StatusOr<std::unique_ptr<CudaStream>> CudaStream::Create(
                                         /*allow_timing=*/false));
 
   return std::unique_ptr<CudaStream>(new CudaStream(
-      executor, std::move(completed_event), priority, stream_handle, concurrency_tracer));
+      executor, std::move(completed_event), priority, stream_handle));
 }
 
 absl::Status CudaStream::WaitFor(Stream* other) {
