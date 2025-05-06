@@ -112,7 +112,11 @@ TEST(PJRTReplicasTest, DotAllReduceTwoReplicas) {
   // Execute.
   // -------------------------------------------------------------------------
 
-  TF_ASSERT_OK_AND_ASSIGN(auto outputs, compile_for_device(0)->Execute(args, /*options=*/{}));
+  gpu::ConcurrencyTracer tracer;
+
+  ExecuteOptions execute_options;
+  execute_options.gpu_concurrency_tracer = &tracer;
+  TF_ASSERT_OK_AND_ASSIGN(auto outputs, compile_for_device(0)->Execute(args, /*options=*/execute_options));
 
   // Each replica returns a tuple with one element (the reduced matrix).
   ASSERT_EQ(outputs.size(), 2);
@@ -217,6 +221,7 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   XlaOp root = Tuple(&builder, {plusAcc * mulAcc});
 
   TF_ASSERT_OK_AND_ASSIGN(auto computation, builder.Build(root));
+  // auto computation = BuildWhileAllReduceComputation();
 
   // ---------------- PJRT client / compilation -------------------------- //
   GpuClientOptions opts;

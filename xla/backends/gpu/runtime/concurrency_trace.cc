@@ -1,7 +1,7 @@
 #include "concurrency_trace.h"
-#include "concurrency_trace.h"
 
 #include "gemm_thunk.h"
+#include "kernel_thunk.h"
 #include "xla/stream_executor/cuda/cuda_event.h"
 
 namespace xla::gpu {
@@ -50,6 +50,26 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
                          t->rhs_buffer(), source);
     AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
                           t->output_buffer(), source);
+  } else if (THUNK_CASE(gpu::KernelThunk)) {
+    const auto& arguments = t->arguments();
+
+    // Add reads first
+    for (int i = 0; i < arguments.size(); ++i) {
+      const auto& argument = arguments[i];
+      if (!t->written()[i]) {
+        AddTrace<BufferRead>(stream->platform_specific_handle().stream,
+                             argument, source);
+      }
+    }
+
+    // Then add writes
+    for (int i = 0; i < arguments.size(); ++i) {
+      const auto& argument = arguments[i];
+      if (t->written()[i]) {
+        AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
+                              argument, source);
+      }
+    }
   }
 }
 void ConcurrencyTracer::OnStreamEventRecord(const se::Stream& stream,
@@ -70,8 +90,6 @@ void ConcurrencyTracer::OnStreamEventRecord(const se::Stream& stream,
 }
 void ConcurrencyTracer::OnStreamEventWait(const se::Stream& stream,
                                           const se::Event& event) {
-
-
   std::cout << "[Stream] " << "E_" << AssertCuda(event).GetHandle() << "->"
             << "S_" << stream.GetName() << std::endl;
   AddTrace<WaitForEvent>(stream.platform_specific_handle().stream,

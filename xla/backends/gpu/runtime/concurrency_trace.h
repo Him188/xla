@@ -100,6 +100,8 @@ class ConcurrencyTracer {
     explicit BufferWrite(void* stream_id, const BufferAllocation::Slice& buffer,
                          const SourceInfo& source)
         : Trace(source), stream_id(stream_id), buffer(buffer) {}
+    BufferWrite(BufferWrite& other) = default;
+    BufferWrite(BufferWrite&& other) = default;
   };
   struct WaitForEvent final : Trace {
     void* stream_id;
@@ -125,6 +127,14 @@ class ConcurrencyTracer {
 
     std::lock_guard lock(mutex_);
     trace_.emplace_back(std::make_unique<T>(std::forward<Args>(args)...));
+  }
+
+  template <typename T>
+  void AddTrace(T&& trace) {
+    static_assert(std::is_base_of_v<Trace, T>, "T must derive from Trace");
+
+    std::lock_guard lock(mutex_);
+    trace_.push_back(std::make_unique<T>(trace));
   }
 
   using EdgeList = absl::flat_hash_map<size_t, absl::flat_hash_set<size_t>>;

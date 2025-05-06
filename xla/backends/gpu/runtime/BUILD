@@ -50,6 +50,7 @@ cc_library(
         "//xla/backends/gpu/runtime:gemm_thunk",
         #        "//xla/backends/gpu/runtime:dynamic_slice_thunk",
         "//xla/backends/gpu/runtime:wait_for_streams_thunk",
+        "//xla/backends/gpu/runtime:kernel_thunk",
         "//xla/stream_executor/cuda:cuda_event",
         #        "//xla/stream_executor/cuda:cuda_stream",
     ],
