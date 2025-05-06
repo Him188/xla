@@ -346,8 +346,9 @@ absl::Status ExecuteThunks(
   for (auto& [id, stream] : additional_execution_streams) {
     stream->SetName("Compute" + std::to_string(id.value()));
   }
-  command_buffer_trace_stream->SetName("CommandBufferTrace");
-
+  if (command_buffer_trace_stream) {
+    command_buffer_trace_stream->SetName("CommandBufferTrace");
+  }
   // Prepare parameters for thunks execution.
   Thunk::ExecuteParams execute_params = Thunk::ExecuteParams::Create(
       *run_options, buffer_allocations, main_stream,
