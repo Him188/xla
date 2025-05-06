@@ -29,11 +29,16 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
     XlaOp A = Parameter(&builder, 0, matShape, "A");
     XlaOp B = Parameter(&builder, 1, matShape, "B");
 
-    XlaOp a_dot_b = Dot(A, B);
+    auto ASlice = A;
+    // auto ASlice = Slice(A, {2024, 2024}, {4048, 4048}, {1, 1});
+    auto BSlice = B;
+    // auto BSlice = Slice(B, {2024, 2024}, {4048, 4048}, {1, 1});
+
+    XlaOp a_dot_b = Dot(ASlice, BSlice);
 
     XlaOp heavy = a_dot_b;
     for (int i = 0; i < 1; ++i) {
-      heavy = Dot(heavy, B);
+      heavy = Dot(heavy, BSlice);
       heavy = heavy - a_dot_b;
     }
 
@@ -86,10 +91,10 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
 
     constexpr auto expected = 1 + 2 + 2 * 100;
     std::cout << "Round " << round_number << " Value: " << tuple[0].Get<float>({0, 0}) << std::endl;
-    ASSERT_TRUE(std::abs(tuple[0].Get<float>({0, 0}) - 1.67047e+07) < 1e07);
 
     tracer.PrintTraces(std::cout);
     tracer.PrintDataRaces(std::cout);
+    ASSERT_NEAR(tuple[0].Get<float>({0, 0}), 16704678, 1e-7); // 12529370 if sliced
   };
 
   constexpr int num_runs = 1;
