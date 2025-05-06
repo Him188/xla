@@ -99,7 +99,7 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsFused) {
   }
   if constexpr (num_runs == 1) {
     xla_test_util::PrintIrDumps(dumpDir, {
-                                             xla_test_util::IRDumpKind::kHLO,
+                                             // xla_test_util::IRDumpKind::kHLO,
                                              xla_test_util::IRDumpKind::kHTML,
                                          });
   }
