@@ -30,7 +30,7 @@ class ConcurrencyTracer {
 
   enum class AccessKind { kRead, kWrite };
 
-  struct SourceInfo {
+  struct SourceInfo final {
     const Thunk* thunk = nullptr;
     const std::string instruction;
 
@@ -42,16 +42,23 @@ class ConcurrencyTracer {
     SourceInfo() : instruction("") {}
   };
 
-  struct MemAccessInfo {
+  struct Buffer final {
+    int device_ordinal;
+    BufferAllocation::Slice slice;
+
+    bool operator==(const Buffer& another) const;
+    bool operator!=(const Buffer& another) const { return !(*this == another); }
+  };
+
+  struct MemAccessInfo final {
     void* stream_id;
-    BufferAllocation::Slice buffer;
+    Buffer buffer;
     AccessKind kind;
     size_t trace_idx;  // position inside trace_
     SourceInfo source;
 
-    MemAccessInfo(void* stream_id, const BufferAllocation::Slice& buffer,
-                  const AccessKind kind, const size_t trace_idx,
-                  const SourceInfo& source)
+    MemAccessInfo(void* stream_id, const Buffer& buffer, const AccessKind kind,
+                  const size_t trace_idx, const SourceInfo& source)
         : stream_id(stream_id),
           buffer(buffer),
           kind(kind),
@@ -61,7 +68,7 @@ class ConcurrencyTracer {
     bool IsWrite() const { return kind == AccessKind::kWrite; }
   };
 
-  struct DataRace {
+  struct DataRace final {
     MemAccessInfo first;
     MemAccessInfo second;
 
@@ -70,7 +77,7 @@ class ConcurrencyTracer {
       ABSL_ASSERT(first.buffer == second.buffer && "Buffer mismatch");
     }
 
-    const BufferAllocation::Slice& buffer() const { return first.buffer; }
+    const Buffer& buffer() const { return first.buffer; }
   };
 
   // Returns the list of detected races.  Thread-safe, may be called many times.
@@ -87,17 +94,17 @@ class ConcurrencyTracer {
   };
   struct BufferRead final : Trace {
     void* stream_id;
-    BufferAllocation::Slice buffer;
+    Buffer buffer;
 
-    explicit BufferRead(void* stream_id, const BufferAllocation::Slice& buffer,
+    explicit BufferRead(void* stream_id, const Buffer& buffer,
                         const SourceInfo& source)
         : Trace(source), stream_id(stream_id), buffer(buffer) {}
   };
   struct BufferWrite final : Trace {
     void* stream_id;
-    BufferAllocation::Slice buffer;
+    Buffer buffer;
 
-    explicit BufferWrite(void* stream_id, const BufferAllocation::Slice& buffer,
+    explicit BufferWrite(void* stream_id, const Buffer& buffer,
                          const SourceInfo& source)
         : Trace(source), stream_id(stream_id), buffer(buffer) {}
     BufferWrite(BufferWrite& other) = default;

@@ -1,4 +1,7 @@
 #include "concurrency_trace.h"
+#include "concurrency_trace.h"
+#include "concurrency_trace.h"
+#include "concurrency_trace.h"
 
 #include "gemm_thunk.h"
 #include "kernel_thunk.h"
@@ -43,13 +46,14 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
             << ": " << Thunk::KindToString(thunk.kind()) << std::endl;
 
   SourceInfo source{&thunk};
+  const int device_ordinal = params.buffer_allocations->device_ordinal();
   if (THUNK_CASE(GemmThunk)) {
     AddTrace<BufferRead>(stream->platform_specific_handle().stream,
-                         t->lhs_buffer(), source);
+                         Buffer{device_ordinal, t->lhs_buffer()}, source);
     AddTrace<BufferRead>(stream->platform_specific_handle().stream,
-                         t->rhs_buffer(), source);
+                         Buffer{device_ordinal, t->rhs_buffer()}, source);
     AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
-                          t->output_buffer(), source);
+                          Buffer{device_ordinal, t->output_buffer()}, source);
   } else if (THUNK_CASE(gpu::KernelThunk)) {
     const auto& arguments = t->arguments();
 
@@ -58,7 +62,7 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
       const auto& argument = arguments[i];
       if (!t->written()[i]) {
         AddTrace<BufferRead>(stream->platform_specific_handle().stream,
-                             argument, source);
+                             Buffer{device_ordinal, argument}, source);
       }
     }
 
@@ -67,7 +71,7 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
       const auto& argument = arguments[i];
       if (t->written()[i]) {
         AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
-                              argument, source);
+                              Buffer{device_ordinal, argument}, source);
       }
     }
   }
@@ -110,13 +114,15 @@ void ConcurrencyTracer::PrintTraces(std::ostream& os) {
 
   for (const std::unique_ptr<Trace>& p : trace_) {
     if (const auto* t = dynamic_cast<const BufferRead*>(p.get()); t) {
-      os << "[MemoryRead ] stream=0x" << std::hex << t->stream_id << " @ "
-         << std::hex << t->buffer << std::dec << '\n';
+      os << "[MemoryRead ][device " << t->buffer.device_ordinal << "] stream=0x"
+         << std::hex << t->stream_id << " @ " << std::hex << t->buffer.slice
+         << std::dec << '\n';
       continue;
     }
     if (const auto* t = dynamic_cast<const BufferWrite*>(p.get()); t) {
-      os << "[MemoryWrite]  stream=0x" << std::hex << t->stream_id << " @ "
-         << std::hex << t->buffer << std::dec << '\n';
+      os << "[MemoryWrite][device " << t->buffer.device_ordinal << "] stream=0x"
+         << std::hex << t->stream_id << " @ " << std::hex << t->buffer.slice
+         << std::dec << '\n';
       continue;
     }
     if (const auto* t = dynamic_cast<const EventRecord*>(p.get()); t) {
@@ -139,6 +145,11 @@ void ConcurrencyTracer::PrintTraces(std::ostream& os) {
 
   // Restore caller’s formatting.
   os.flags(old_flags);
+}
+bool ConcurrencyTracer::Buffer::operator==(const Buffer& another) const {
+  if (device_ordinal != another.device_ordinal) return false;
+  if (slice != another.slice) return false;
+  return true;
 }
 std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
     const {
@@ -224,7 +235,8 @@ void ConcurrencyTracer::PrintDataRaces(std::ostream& os) const {
   os << "❌  Detected " << races.size() << " data-race"
      << (races.size() == 1 ? "" : "s") << ":\n";
   for (const auto& r : races) {
-    os << "  • Buffer @" << r.buffer().allocation()->index()
+    os << "  • Buffer @" << r.buffer().device_ordinal << "/"
+       << r.buffer().slice.allocation()->index()
        << " accessed "
        // << "at trace[" << r.first.trace_idx << "] ("
        // << (r.first.IsWrite() ? "W" : "R") << ") and trace["
