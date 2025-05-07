@@ -3,6 +3,7 @@
 #include "concurrency_trace.h"
 #include "concurrency_trace.h"
 
+#include "copy_thunk.h"
 #include "gemm_thunk.h"
 #include "kernel_thunk.h"
 #include "xla/stream_executor/cuda/cuda_event.h"
@@ -74,6 +75,11 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
                               Buffer{device_ordinal, argument}, source);
       }
     }
+  } else if (THUNK_CASE(gpu::CopyThunk)) {
+    AddTrace<BufferRead>(stream->platform_specific_handle().stream,
+                         Buffer{device_ordinal, t->source()}, source);
+    AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
+                          Buffer{device_ordinal, t->destination()}, source);
   }
 }
 void ConcurrencyTracer::OnStreamEventRecord(const se::Stream& stream,
