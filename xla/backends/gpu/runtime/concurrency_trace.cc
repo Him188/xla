@@ -1,7 +1,7 @@
 #include "concurrency_trace.h"
-#include "concurrency_trace.h"
-#include "concurrency_trace.h"
-#include "concurrency_trace.h"
+
+#include <iostream>
+#include <utility>
 
 #include "copy_thunk.h"
 #include "gemm_thunk.h"
@@ -23,8 +23,7 @@ static const stream_executor::gpu::CudaEvent& AssertCuda(
 //     const se::Stream* stream) {
 //   return *dynamic_cast<const stream_executor::gpu::CudaStream*>(stream);
 // }
-// static const stream_executor::gpu::CuQuoted sentences onlydaStream&
-// AssertCuda(
+// static const stream_executor::gpu::CudaStream& AssertCuda(
 //     const se::Stream& stream) {
 //   return AssertCuda(&stream);
 // }
@@ -157,6 +156,15 @@ bool ConcurrencyTracer::Buffer::operator==(const Buffer& another) const {
   if (slice != another.slice) return false;
   return true;
 }
+bool ConcurrencyTracer::Buffer::Overlaps(const Buffer& another) const {
+  if (device_ordinal != another.device_ordinal) return false;
+  if (slice.allocation() != another.slice.allocation()) return false;
+  const uint64_t a_begin = slice.offset();
+  const uint64_t a_end = a_begin + slice.size();
+  const uint64_t b_begin = another.slice.offset();
+  const uint64_t b_end = b_begin + another.slice.size();
+  return a_begin < b_end && b_begin < a_end;
+}
 std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
     const {
   // Collect all memory accesses.
@@ -199,9 +207,9 @@ std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
       const auto& a = accesses[i];
       const auto& b = accesses[j];
 
-      // Different streams + same buffer + at least one write?
+      // Different streams + overlapping buffer range + at least one write?
       if (a.stream_id == b.stream_id) continue;
-      if (a.buffer != b.buffer) continue;
+      if (!a.buffer.Overlaps(b.buffer)) continue;
       if (!(a.kind == AccessKind::kWrite || b.kind == AccessKind::kWrite))
         continue;
 

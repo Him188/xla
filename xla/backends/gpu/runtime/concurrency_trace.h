@@ -48,6 +48,7 @@ class ConcurrencyTracer {
 
     bool operator==(const Buffer& another) const;
     bool operator!=(const Buffer& another) const { return !(*this == another); }
+    bool Overlaps(const Buffer& another) const;  // true if byte-ranges overlap
   };
 
   struct MemAccessInfo final {
@@ -74,7 +75,7 @@ class ConcurrencyTracer {
 
     DataRace(const MemAccessInfo& first, const MemAccessInfo& second)
         : first(first), second(second) {
-      ABSL_ASSERT(first.buffer == second.buffer && "Buffer mismatch");
+      ABSL_ASSERT(first.buffer.Overlaps(second.buffer) && "Buffer mismatch");
     }
 
     const Buffer& buffer() const { return first.buffer; }
