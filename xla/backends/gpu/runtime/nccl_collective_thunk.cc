@@ -513,6 +513,10 @@ absl::Status NcclCollectiveDoneThunk::ExecuteOnStream(
     const ExecuteParams& params) {
   se::StreamExecutor* executor = params.stream->parent();
   TF_ASSIGN_OR_RETURN(se::Event * event, async_events_->GetEvent(executor));
+  if (const auto *synthetic_bug_options = params.synthetic_bug_options;
+    synthetic_bug_options && synthetic_bug_options->nccl_collective_done_thunk) {
+    return absl::OkStatus();
+  }
   return params.stream->WaitFor(event);
 }
 

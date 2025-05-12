@@ -55,6 +55,7 @@ namespace gpu {
 
 struct SyntheticBugOptions {
   bool wait_for_streams_thunk = false;
+  bool nccl_collective_done_thunk = false;
 };
 
 // Execution stream id allows to specify what Gpu stream Thunk should be using

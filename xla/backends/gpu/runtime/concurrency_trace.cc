@@ -85,12 +85,30 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
           until the accompanying CollectiveDoneThunk waits on the
           asynchronous event recorded by the start thunk.
      */
-    for (const auto& buf : t->buffers()) {
-      AddTrace<BufferRead>(stream->platform_specific_handle().stream,
-                           Buffer{device_ordinal, buf.source_buffer}, source);
-      AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
-                           Buffer{device_ordinal, buf.destination_buffer},
-                           source);
+
+    const auto async_events = t->async_events();
+    if (async_events) {
+      if (const auto event = async_events->GetEvent(params.stream->parent()).value()) {
+        const auto event_id = static_cast<void*>(AssertCuda(event).GetHandle());
+
+        // Async
+        for (const auto& buf : t->buffers()) {
+          AddTrace<AsyncBufferRead>(event_id,
+                               Buffer{device_ordinal, buf.source_buffer}, source);
+          AddTrace<AsyncBufferWrite>(event_id,
+                               Buffer{device_ordinal, buf.destination_buffer},
+                               source);
+        }
+      }
+    } else {
+      // Sync
+      for (const auto& buf : t->buffers()) {
+        AddTrace<BufferRead>(stream->platform_specific_handle().stream,
+                             Buffer{device_ordinal, buf.source_buffer}, source);
+        AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
+                             Buffer{device_ordinal, buf.destination_buffer},
+                             source);
+      }
     }
   } else if (THUNK_CASE(gpu::NcclCollectiveDoneThunk)) {
     /*  NcclCollectiveDoneThunk executes a `stream->WaitFor(event)` that
@@ -139,9 +157,21 @@ void ConcurrencyTracer::PrintTraces(std::ostream& os) {
          << std::dec << '\n';
       continue;
     }
+    if (const auto* t = dynamic_cast<const AsyncBufferRead*>(p.get()); t) {
+      os << "[MemoryRead ][device " << t->buffer.device_ordinal << "] event=0x"
+         << std::hex << t->event_id << " @ " << std::hex << t->buffer.slice
+         << std::dec << '\n';
+      continue;
+    }
     if (const auto* t = dynamic_cast<const BufferWrite*>(p.get()); t) {
       os << "[MemoryWrite][device " << t->buffer.device_ordinal << "] stream=0x"
          << std::hex << t->stream_id << " @ " << std::hex << t->buffer.slice
+         << std::dec << '\n';
+      continue;
+    }
+    if (const auto* t = dynamic_cast<const AsyncBufferWrite*>(p.get()); t) {
+      os << "[MemoryWrite][device " << t->buffer.device_ordinal << "] event=0x"
+         << std::hex << t->event_id << " @ " << std::hex << t->buffer.slice
          << std::dec << '\n';
       continue;
     }
@@ -180,29 +210,34 @@ bool ConcurrencyTracer::Buffer::Overlaps(const Buffer& another) const {
   const uint64_t b_end = b_begin + another.slice.size();
   return a_begin < b_end && b_begin < a_end;
 }
-std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
-    const {
-  // Collect all memory accesses.
-  std::vector<MemAccessInfo> accesses;
+std::vector<ConcurrencyTracer::DataRace>
+ConcurrencyTracer::DetectDataRaces() const {
+  /* ── Collect every memory access (sync + async) ───────────────────── */
+  std::vector<MemAccessInfo> acc;
+  acc.reserve(trace_.size());
+
   for (size_t i = 0; i < trace_.size(); ++i) {
-    if (const auto* r = dynamic_cast<const BufferRead*>(trace_[i].get()); r) {
-      accesses.push_back(
-          {r->stream_id, r->buffer, AccessKind::kRead, i, r->source});
-    } else if (const auto* w =
-                   dynamic_cast<const BufferWrite*>(trace_[i].get());
-               w) {
-      accesses.push_back(
-          {w->stream_id, w->buffer, AccessKind::kWrite, i, w->source});
+    if (auto* r = dynamic_cast<const BufferRead*>(trace_[i].get()); r) {
+      acc.push_back({r->stream_id, r->buffer, AccessKind::kRead, i, r->source});
+    } else if (auto* w = dynamic_cast<const BufferWrite*>(trace_[i].get()); w) {
+      acc.push_back({w->stream_id, w->buffer, AccessKind::kWrite, i,
+                     w->source});
+    } else if (auto* r =
+                   dynamic_cast<const AsyncBufferRead*>(trace_[i].get()); r) {
+      acc.push_back({r->event_id, r->buffer, AccessKind::kRead, i, r->source});
+    } else if (auto* w =
+                   dynamic_cast<const AsyncBufferWrite*>(trace_[i].get()); w) {
+      acc.push_back({w->event_id, w->buffer, AccessKind::kWrite, i,
+                     w->source});
     }
   }
 
-  // Build happens-before graph once.
+  /* ── Build HB-graph once ───────────────────────────────────────────── */
   EdgeList hb = BuildHappensBeforeGraph();
 
-  // Helper: reachability with DFS (graph is tiny).
-  auto happens_before = [&](const size_t a, const size_t b) {
+  auto happens_before = [&](size_t a, size_t b) {
     absl::flat_hash_set<size_t> seen;
-    std::vector stack = {a};
+    std::vector<size_t> stack = {a};
     while (!stack.empty()) {
       size_t cur = stack.back();
       stack.pop_back();
@@ -215,24 +250,19 @@ std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
     return false;
   };
 
-  // Pairwise race detection
+  /* ── Pair-wise race detection ─────────────────────────────────────── */
   std::vector<DataRace> races;
-  for (size_t i = 0; i < accesses.size(); ++i) {
-    for (size_t j = i + 1; j < accesses.size(); ++j) {
-      const auto& a = accesses[i];
-      const auto& b = accesses[j];
+  for (size_t i = 0; i < acc.size(); ++i) {
+    for (size_t j = i + 1; j < acc.size(); ++j) {
+      const auto& A = acc[i];
+      const auto& B = acc[j];
 
-      // Different streams + overlapping buffer range + at least one write?
-      if (a.stream_id == b.stream_id) continue;
-      if (!a.buffer.Overlaps(b.buffer)) continue;
-      if (!(a.kind == AccessKind::kWrite || b.kind == AccessKind::kWrite))
-        continue;
-
-      // If neither happens-before the other, we have a race.
-      if (!happens_before(a.trace_idx, b.trace_idx) &&
-          !happens_before(b.trace_idx, a.trace_idx)) {
-        races.push_back({a, b});
-      }
+      if (A.stream_id == B.stream_id) continue;          // same (virtual) stream
+      if (!A.buffer.Overlaps(B.buffer)) continue;        // no overlap
+      if (!(A.IsWrite() || B.IsWrite())) continue;       // read–read is safe
+      if (!happens_before(A.trace_idx, B.trace_idx) &&
+          !happens_before(B.trace_idx, A.trace_idx))
+        races.push_back({A, B});
     }
   }
   return races;
@@ -279,48 +309,75 @@ void ConcurrencyTracer::PrintDataRaces(std::ostream& os) const {
   }
 }
 
-ConcurrencyTracer::EdgeList ConcurrencyTracer::BuildHappensBeforeGraph() const {
+ConcurrencyTracer::EdgeList
+ConcurrencyTracer::BuildHappensBeforeGraph() const {
   EdgeList hb;
   auto add_edge = [&](size_t a, size_t b) { hb[a].insert(b); };
 
-  // program order: consecutive records on the same stream
+  /* ────────────────────────────────────────────────────────────────────
+     Pass 0: remember the last op we have seen on every real stream
+             (for program-order edges); also record / wait positions.
+     ──────────────────────────────────────────────────────────────────── */
   absl::flat_hash_map<void*, size_t> last_seen_on_stream;
-  for (size_t i = 0; i < trace_.size(); ++i) {
-    if (auto* t = dynamic_cast<const BufferRead*>(trace_[i].get()); t) {
-      if (auto it = last_seen_on_stream.find(t->stream_id);
-          it != last_seen_on_stream.end())
-        add_edge(it->second, i);
-      last_seen_on_stream[t->stream_id] = i;
-    } else if (auto* t = dynamic_cast<const BufferWrite*>(trace_[i].get()); t) {
-      if (auto it = last_seen_on_stream.find(t->stream_id);
-          it != last_seen_on_stream.end())
-        add_edge(it->second, i);
-      last_seen_on_stream[t->stream_id] = i;
-    } else if (auto* t = dynamic_cast<const EventRecord*>(trace_[i].get()); t) {
-      if (auto it = last_seen_on_stream.find(t->stream_id);
-          it != last_seen_on_stream.end())
-        add_edge(it->second, i);
-      last_seen_on_stream[t->stream_id] = i;
-    } else if (auto* t = dynamic_cast<const WaitForEvent*>(trace_[i].get());
-               t) {
-      if (auto it = last_seen_on_stream.find(t->stream_id);
-          it != last_seen_on_stream.end())
-        add_edge(it->second, i);
-      last_seen_on_stream[t->stream_id] = i;
-    }
-  }
+  absl::flat_hash_map<void*, size_t>             record_pos;
+  absl::flat_hash_map<void*, std::vector<size_t>> wait_pos;
 
-  // event edges: Record -> Wait on the *same* event id
-  absl::flat_hash_map<void*, size_t> record_pos;
   for (size_t i = 0; i < trace_.size(); ++i) {
     if (auto* rec = dynamic_cast<const EventRecord*>(trace_[i].get()); rec) {
       record_pos[rec->event_id] = i;
-    } else if (auto* wait = dynamic_cast<const WaitForEvent*>(trace_[i].get());
-               wait) {
-      auto rec_it = record_pos.find(wait->event_id);
-      if (rec_it != record_pos.end()) add_edge(rec_it->second, i);
+    } else if (auto* w = dynamic_cast<const WaitForEvent*>(trace_[i].get());
+               w) {
+      wait_pos[w->event_id].push_back(i);
     }
+
+    auto add_po_edge = [&](void* stream) {
+      if (auto it = last_seen_on_stream.find(stream);
+          it != last_seen_on_stream.end())
+        add_edge(it->second, i);
+      last_seen_on_stream[stream] = i;
+    };
+
+    if (auto* r = dynamic_cast<const BufferRead*>(trace_[i].get()); r)
+      add_po_edge(r->stream_id);
+    else if (auto* w = dynamic_cast<const BufferWrite*>(trace_[i].get()); w)
+      add_po_edge(w->stream_id);
+    else if (auto* rec = dynamic_cast<const EventRecord*>(trace_[i].get());
+             rec)
+      add_po_edge(rec->stream_id);
+    else if (auto* w = dynamic_cast<const WaitForEvent*>(trace_[i].get()); w)
+      add_po_edge(w->stream_id);
   }
+
+  /* ────────────────────────────────────────────────────────────────────
+     Pass 1: event edges  (Record  →  Wait)
+     ──────────────────────────────────────────────────────────────────── */
+  for (const auto& [ev, rec_i] : record_pos) {
+    if (auto it = wait_pos.find(ev); it != wait_pos.end())
+      for (size_t w_i : it->second) add_edge(rec_i, w_i);
+  }
+
+  /* ────────────────────────────────────────────────────────────────────
+     Pass 2: async memory-access edges
+             Record → AsyncAccess → Wait   for every access on that event
+     ──────────────────────────────────────────────────────────────────── */
+  for (size_t i = 0; i < trace_.size(); ++i) {
+    const void* ev = nullptr;
+    if (auto* ar = dynamic_cast<const AsyncBufferRead*>(trace_[i].get()); ar)
+      ev = ar->event_id;
+    else if (auto* aw =
+                 dynamic_cast<const AsyncBufferWrite*>(trace_[i].get()); aw)
+      ev = aw->event_id;
+
+    if (!ev) continue;  // not an async access
+
+    auto rec_it = record_pos.find(const_cast<void*>(ev));
+    if (rec_it != record_pos.end()) add_edge(rec_it->second, i);
+
+    if (auto w_it = wait_pos.find(const_cast<void*>(ev));
+        w_it != wait_pos.end())
+      for (size_t w_i : w_it->second) add_edge(i, w_i);
+  }
+
   return hb;
 }
 

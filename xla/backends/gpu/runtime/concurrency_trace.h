@@ -101,6 +101,14 @@ class ConcurrencyTracer {
                         const SourceInfo& source)
         : Trace(source), stream_id(stream_id), buffer(buffer) {}
   };
+  struct AsyncBufferRead final : Trace {
+    void* event_id;
+    Buffer buffer;
+
+    explicit AsyncBufferRead(void* event_id, const Buffer& buffer,
+                        const SourceInfo& source)
+        : Trace(source), event_id(event_id), buffer(buffer) {}
+  };
   struct BufferWrite final : Trace {
     void* stream_id;
     Buffer buffer;
@@ -110,6 +118,14 @@ class ConcurrencyTracer {
         : Trace(source), stream_id(stream_id), buffer(buffer) {}
     BufferWrite(BufferWrite& other) = default;
     BufferWrite(BufferWrite&& other) = default;
+  };
+  struct AsyncBufferWrite final : Trace {
+    void* event_id;
+    Buffer buffer;
+
+    explicit AsyncBufferWrite(void* event_id, const Buffer& buffer,
+                        const SourceInfo& source)
+        : Trace(source), event_id(event_id), buffer(buffer) {}
   };
   struct WaitForEvent final : Trace {
     void* stream_id;
