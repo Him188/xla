@@ -220,8 +220,8 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   XlaOp mulAcc = AllReduce(plusAcc * A, CreateScalarAddComputation(F32, &builder));
   XlaOp root = Tuple(&builder, {plusAcc * mulAcc});
 
-  TF_ASSERT_OK_AND_ASSIGN(auto computation, builder.Build(root));
-  // auto computation = BuildWhileAllReduceComputation();
+  // TF_ASSERT_OK_AND_ASSIGN(auto computation, builder.Build(root));
+  auto computation = BuildWhileAllReduceComputation();
 
   // ---------------- PJRT client / compilation -------------------------- //
   GpuClientOptions opts;

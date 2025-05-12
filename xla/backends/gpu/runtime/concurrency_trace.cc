@@ -6,6 +6,7 @@
 #include "copy_thunk.h"
 #include "gemm_thunk.h"
 #include "kernel_thunk.h"
+#include "nccl_all_reduce_thunk.h"
 #include "xla/stream_executor/cuda/cuda_event.h"
 
 namespace xla::gpu {
@@ -39,14 +40,14 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
   auto* stream =
       Thunk::GetStreamForExecution(thunk.execution_stream_id(), params).value();
 
-  std::cout << "[Stream] Launching thunk on stream " << "S_"
-            << Thunk::GetStreamForExecution(thunk.execution_stream_id(), params)
-                   .value()
-                   ->GetName()
-            << ": " << Thunk::KindToString(thunk.kind()) << std::endl;
+  std::cout << "[Stream] Launching thunk on stream S_"
+            << stream->GetName() << ": "
+            << Thunk::KindToString(thunk.kind()) << std::endl;
 
   SourceInfo source{&thunk};
   const int device_ordinal = params.buffer_allocations->device_ordinal();
+
+  /* ---------------------------- ordinary thunks --------------------------- */
   if (THUNK_CASE(GemmThunk)) {
     AddTrace<BufferRead>(stream->platform_specific_handle().stream,
                          Buffer{device_ordinal, t->lhs_buffer()}, source);
@@ -54,59 +55,73 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
                          Buffer{device_ordinal, t->rhs_buffer()}, source);
     AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
                           Buffer{device_ordinal, t->output_buffer()}, source);
+
   } else if (THUNK_CASE(gpu::KernelThunk)) {
     const auto& arguments = t->arguments();
 
-    // Add reads first
-    for (int i = 0; i < arguments.size(); ++i) {
-      const auto& argument = arguments[i];
-      if (!t->written()[i]) {
+    // reads first
+    for (int i = 0; i < arguments.size(); ++i)
+      if (!t->written()[i])
         AddTrace<BufferRead>(stream->platform_specific_handle().stream,
-                             Buffer{device_ordinal, argument}, source);
-      }
-    }
+                             Buffer{device_ordinal, arguments[i]}, source);
 
-    // Then add writes
-    for (int i = 0; i < arguments.size(); ++i) {
-      const auto& argument = arguments[i];
-      if (t->written()[i]) {
+    // writes
+    for (int i = 0; i < arguments.size(); ++i)
+      if (t->written()[i])
         AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
-                              Buffer{device_ordinal, argument}, source);
-      }
-    }
+                              Buffer{device_ordinal, arguments[i]}, source);
+
   } else if (THUNK_CASE(gpu::CopyThunk)) {
     AddTrace<BufferRead>(stream->platform_specific_handle().stream,
                          Buffer{device_ordinal, t->source()}, source);
     AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
                           Buffer{device_ordinal, t->destination()}, source);
+
+  /* -------------------------- NCCL collective ⇩ --------------------------- */
+  } else if (THUNK_CASE(gpu::NcclAllReduceStartThunk)) {
+    /*  The start thunk issues the NCCL call on an *async* stream:
+        – all input buffers are READ;
+        – all destination buffers are WRITTEN but are **not ready**
+          until the accompanying CollectiveDoneThunk waits on the
+          asynchronous event recorded by the start thunk.
+     */
+    for (const auto& buf : t->buffers()) {
+      AddTrace<BufferRead>(stream->platform_specific_handle().stream,
+                           Buffer{device_ordinal, buf.source_buffer}, source);
+      AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
+                           Buffer{device_ordinal, buf.destination_buffer},
+                           source);
+    }
+  } else if (THUNK_CASE(gpu::NcclCollectiveDoneThunk)) {
+    /*  NcclCollectiveDoneThunk executes a `stream->WaitFor(event)` that
+        corresponds to the event recorded by the start thunk.  The tracing
+        callback OnStreamEventWait invoked from our stream shim will record
+        the WaitForEvent edge, so there is nothing to do here in terms of
+        buffer accesses — the thunk touches no user data itself. */
   }
+#undef THUNK_CASE
 }
+
+/* ----------------------------- Stream events ------------------------------ */
+
 void ConcurrencyTracer::OnStreamEventRecord(const se::Stream& stream,
                                             const se::Event& event) {
-  std::cout << "[Stream] " << "S_" << stream.GetName() << " recorded ";
-
-  std::cout << "E_"
-            << dynamic_cast<const stream_executor::gpu::CudaEvent*>(&event)
-                   ->GetHandle();  // ptr
-  // if (event == &stream.completed_event_) {
-  //   std::cout << " (completed_event)";
-  // }
-
-  std::cout << std::endl;
+  std::cout << "[Stream] S_" << stream.GetName() << " recorded "
+            << "E_" << AssertCuda(event).GetHandle() << std::endl;
 
   AddTrace<EventRecord>(stream.platform_specific_handle().stream,
                         static_cast<void*>(AssertCuda(&event).GetHandle()));
 }
+
 void ConcurrencyTracer::OnStreamEventWait(const se::Stream& stream,
                                           const se::Event& event) {
-  std::cout << "[Stream] " << "E_" << AssertCuda(event).GetHandle() << "->"
+  std::cout << "[Stream] E_" << AssertCuda(event).GetHandle() << " -> "
             << "S_" << stream.GetName() << std::endl;
+
   AddTrace<WaitForEvent>(stream.platform_specific_handle().stream,
                          static_cast<void*>(AssertCuda(&event).GetHandle()));
-
-  // std::cout << "[Stream] " << "E_" << AssertCuda(event).GetHandle() << "->"
-  //           << "S_" << AssertCuda(stream).GetName() << std::endl;
 }
+
 void ConcurrencyTracer::PrintTraces(std::ostream& os) {
   // Protect the trace_ vector while we read from it.
   std::lock_guard lock(mutex_);
