@@ -36,11 +36,6 @@ class ConcurrencyTracer {
 
     SourceInfo(const Thunk* thunk, const std::string& instruction)
         : thunk(thunk), instruction(instruction) {}
-    SourceInfo(SourceInfo&&) = default;
-        SourceInfo(const SourceInfo&) = default;
-    SourceInfo operator=(SourceInfo& info) const {
-      return info;
-    }
     explicit SourceInfo(const Thunk* thunk)
         : thunk(thunk), instruction(thunk->source_instruction()) {}
 
@@ -133,12 +128,6 @@ class ConcurrencyTracer {
 
   std::mutex mutex_{};
   std::vector<std::unique_ptr<Trace>> trace_ ABSL_GUARDED_BY(mutex_);
-
-  absl::flat_hash_map<const se::Event*, std::vector<Buffer>>
-    pending_async_writes_ ABSL_GUARDED_BY(mutex_);
-  absl::flat_hash_map<const se::Event*, SourceInfo>
-      pending_async_write_source_ ABSL_GUARDED_BY(mutex_);
-
 
   template <typename T, typename... Args>
   void AddTrace(Args&&... args) {

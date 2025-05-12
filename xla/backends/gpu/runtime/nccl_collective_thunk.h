@@ -140,7 +140,7 @@ class NcclCollectiveThunk : public Thunk {
   // launched on a dedicated stream that is synchronized with main compute
   // stream only when needed).
   class AsyncEvents {
-   public:
+   private:
     friend class NcclCollectiveThunk;
     friend class NcclCollectiveDoneThunk;
     friend class NcclGroupThunk;
