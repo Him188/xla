@@ -21,6 +21,9 @@ class ConcurrencyTracer {
   explicit ConcurrencyTracer();
   ~ConcurrencyTracer();
 
+  using EventId = const void*;
+  using StreamId = const void*;
+
   // region Thunk Traces
   void OnThunkLaunch(const Thunk& thunk, const Thunk::ExecuteParams& params);
   void OnStreamEventRecord(const se::Stream& stream, const se::Event& event);
@@ -43,8 +46,8 @@ class ConcurrencyTracer {
   };
 
   struct Buffer final {
-    int device_ordinal;
-    BufferAllocation::Slice slice;
+    const int device_ordinal;
+    const BufferAllocation::Slice slice;
 
     bool operator==(const Buffer& another) const;
     bool operator!=(const Buffer& another) const { return !(*this == another); }
@@ -52,21 +55,28 @@ class ConcurrencyTracer {
   };
 
   struct MemAccessInfo final {
-    void* stream_id;
-    Buffer buffer;
-    AccessKind kind;
-    size_t trace_idx;  // position inside trace_
-    SourceInfo source;
+    const StreamId stream_id;
+    const Buffer buffer;
+    const AccessKind kind;
+    const size_t trace_idx;  // position inside trace_
+    const SourceInfo source;
+    const EventId completion_event_id =
+        nullptr;  // if not null, it's an async event.
 
-    MemAccessInfo(void* stream_id, const Buffer& buffer, const AccessKind kind,
-                  const size_t trace_idx, const SourceInfo& source)
+    MemAccessInfo(const StreamId stream_id, const Buffer& buffer,
+                  const AccessKind kind, const size_t trace_idx,
+                  const SourceInfo& source,
+                  const EventId completion_event_id = nullptr)
         : stream_id(stream_id),
           buffer(buffer),
           kind(kind),
           trace_idx(trace_idx),
-          source(source) {}
+          source(source),
+          completion_event_id(completion_event_id) {}
 
     bool IsWrite() const { return kind == AccessKind::kWrite; }
+    bool IsAsync() const { return completion_event_id != nullptr; }
+    EventId GetCompletionEventId() const { return completion_event_id; }
   };
 
   struct DataRace final {
@@ -94,51 +104,59 @@ class ConcurrencyTracer {
     virtual ~Trace() = default;
   };
   struct BufferRead final : Trace {
-    void* stream_id;
-    Buffer buffer;
+    const StreamId stream_id;
+    const Buffer buffer;
 
-    explicit BufferRead(void* stream_id, const Buffer& buffer,
+    explicit BufferRead(const StreamId stream_id, const Buffer& buffer,
                         const SourceInfo& source)
         : Trace(source), stream_id(stream_id), buffer(buffer) {}
   };
   struct AsyncBufferRead final : Trace {
-    void* event_id;
-    Buffer buffer;
+    const StreamId stream_id;
+    const EventId event_id;
+    const Buffer buffer;
 
-    explicit AsyncBufferRead(void* event_id, const Buffer& buffer,
-                        const SourceInfo& source)
-        : Trace(source), event_id(event_id), buffer(buffer) {}
+    explicit AsyncBufferRead(const StreamId stream_id, const EventId event_id,
+                             const Buffer& buffer, const SourceInfo& source)
+        : Trace(source),
+          stream_id(stream_id),
+          event_id(event_id),
+          buffer(buffer) {}
   };
   struct BufferWrite final : Trace {
-    void* stream_id;
-    Buffer buffer;
+    const StreamId stream_id;
+    const Buffer buffer;
 
-    explicit BufferWrite(void* stream_id, const Buffer& buffer,
+    explicit BufferWrite(const StreamId stream_id, const Buffer& buffer,
                          const SourceInfo& source)
         : Trace(source), stream_id(stream_id), buffer(buffer) {}
     BufferWrite(BufferWrite& other) = default;
     BufferWrite(BufferWrite&& other) = default;
   };
   struct AsyncBufferWrite final : Trace {
-    void* event_id;
+    const StreamId stream_id;
+    const EventId event_id;
     Buffer buffer;
 
-    explicit AsyncBufferWrite(void* event_id, const Buffer& buffer,
-                        const SourceInfo& source)
-        : Trace(source), event_id(event_id), buffer(buffer) {}
+    explicit AsyncBufferWrite(const StreamId stream_id, const EventId event_id,
+                              const Buffer& buffer, const SourceInfo& source)
+        : Trace(source),
+          stream_id(stream_id),
+          event_id(event_id),
+          buffer(buffer) {}
   };
   struct WaitForEvent final : Trace {
-    void* stream_id;
-    void* event_id;
+    const StreamId stream_id;
+    const EventId event_id;
 
-    WaitForEvent(void* stream_id, void* event_id)
+    WaitForEvent(const StreamId stream_id, const EventId event_id)
         : Trace({}), stream_id(stream_id), event_id(event_id) {}
   };
   struct EventRecord final : Trace {
-    void* stream_id;
-    void* event_id;
+    const StreamId stream_id;
+    const EventId event_id;
 
-    EventRecord(void* stream_id, void* event_id)
+    EventRecord(const StreamId stream_id, const EventId event_id)
         : Trace({}), stream_id(stream_id), event_id(event_id) {}
   };
 
