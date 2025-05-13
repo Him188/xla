@@ -275,7 +275,7 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   gpu::ConcurrencyTracer tracer;
   ExecuteOptions exec_opts;
   exec_opts.gpu_concurrency_tracer = &tracer;
-  exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = true;
+  exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
   auto outs = exe->Execute(args, exec_opts).value();
 
   print_gpu_thunk_info(exe.get());

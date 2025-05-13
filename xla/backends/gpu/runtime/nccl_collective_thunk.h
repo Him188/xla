@@ -140,10 +140,11 @@ class NcclCollectiveThunk : public Thunk {
   // launched on a dedicated stream that is synchronized with main compute
   // stream only when needed).
   class AsyncEvents {
-   public:
+   private:
     friend class NcclCollectiveThunk;
     friend class NcclCollectiveDoneThunk;
     friend class NcclGroupThunk;
+    friend class ConcurrencyTracer;
 
     absl::Status Initialize(se::StreamExecutor* executor);
     absl::StatusOr<se::Event*> GetEvent(se::StreamExecutor* executor);
@@ -180,6 +181,7 @@ class NcclCollectiveThunk : public Thunk {
   }
 
  protected:
+  friend class ConcurrencyTracer;
   virtual absl::Status RunNcclCollective(const ExecuteParams& params,
                                          se::Stream& stream,
                                          CommunicatorHandle comm) = 0;

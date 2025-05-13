@@ -97,6 +97,11 @@ class ConcurrencyTracer {
   // Pretty-print the races returned by DetectDataRaces().
   void PrintDataRaces(std::ostream& os) const;
 
+  void PrintDot(std::ostream& out) const {
+    const EdgeList graph = BuildHappensBeforeGraph();
+    PrintDot(graph, out);
+  }
+
  private:
   struct Trace {
     const SourceInfo source{};
@@ -112,15 +117,19 @@ class ConcurrencyTracer {
         : Trace(source), stream_id(stream_id), buffer(buffer) {}
   };
   struct AsyncBufferRead final : Trace {
-    const StreamId stream_id;
-    const EventId event_id;
+    const StreamId source_stream_id;
+    const StreamId async_stream_id;
+    const EventId completion_event_id;
     const Buffer buffer;
 
-    explicit AsyncBufferRead(const StreamId stream_id, const EventId event_id,
+    explicit AsyncBufferRead(const StreamId source_stream_id,
+                             const StreamId async_stream_id,
+                             const EventId completion_event_id,
                              const Buffer& buffer, const SourceInfo& source)
         : Trace(source),
-          stream_id(stream_id),
-          event_id(event_id),
+          source_stream_id(source_stream_id),
+          async_stream_id(async_stream_id),
+          completion_event_id(completion_event_id),
           buffer(buffer) {}
   };
   struct BufferWrite final : Trace {
@@ -134,15 +143,19 @@ class ConcurrencyTracer {
     BufferWrite(BufferWrite&& other) = default;
   };
   struct AsyncBufferWrite final : Trace {
-    const StreamId stream_id;
-    const EventId event_id;
+    const StreamId source_stream_id;
+    const StreamId async_stream_id;
+    const EventId completion_event_id;
     Buffer buffer;
 
-    explicit AsyncBufferWrite(const StreamId stream_id, const EventId event_id,
+    explicit AsyncBufferWrite(const StreamId source_stream_id,
+                              const StreamId async_stream_id,
+                              const EventId completion_event_id,
                               const Buffer& buffer, const SourceInfo& source)
         : Trace(source),
-          stream_id(stream_id),
-          event_id(event_id),
+          source_stream_id(source_stream_id),
+          async_stream_id(async_stream_id),
+          completion_event_id(completion_event_id),
           buffer(buffer) {}
   };
   struct WaitForEvent final : Trace {
@@ -181,6 +194,7 @@ class ConcurrencyTracer {
 
   using EdgeList = absl::flat_hash_map<size_t, absl::flat_hash_set<size_t>>;
   EdgeList BuildHappensBeforeGraph() const;
+  static void PrintDot(const EdgeList& graph, std::ostream& out);
 };
 
 }  // namespace xla::gpu
