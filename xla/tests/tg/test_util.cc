@@ -1,6 +1,8 @@
 #include "test_util.h"
 
 #include "xla/backends/gpu/runtime/gemm_thunk.h"
+#include "xla/backends/gpu/runtime/kernel_thunk.h"
+#include "xla/backends/gpu/runtime/nccl_all_reduce_thunk.h"
 #include "xla/backends/gpu/runtime/wait_for_streams_thunk.h"
 #include "xla/hlo/builder/xla_builder.h"
 #include "xla/stream_executor/gpu/gpu_command_buffer.h"
@@ -33,7 +35,8 @@ void xla_test_util::EnableLogs() {
   setenv("TF_CPP_MIN_VLOG_LEVEL", "0", 1);
   // setenv("TF_CPP_MAX_VLOG_LEVEL", "10", 1);
   setenv("TF_CPP_VMODULE",
-         "xla_service=2,xla_compilation_cache=1,gpu_compiler=3,command_buffer_thunk=3,async_wrapper.cc=3,xla/backends/gpu/collectives/nccl_communicator.cc=10",
+         "xla_service=2,xla_compilation_cache=1,gpu_compiler=3,command_buffer_thunk=3,async_wrapper.cc=3,xla/backends/gpu/collectives/"
+         "nccl_communicator.cc=10,collective_pipeliner=10",
          1);
 }
 
@@ -140,6 +143,23 @@ void xla_test_util::print_gpu_thunk_sequence(se::StreamExecutor *stream_executor
       std::cout << ", LHS: " << gemm_thunk->lhs_buffer();
       std::cout << ", RHS: " << gemm_thunk->rhs_buffer();
       std::cout << ", output: " << gemm_thunk->output_buffer();
+      std::cout << std::endl;
+    } else if (auto *nccl_async_start_thunk = dynamic_cast<const gpu::NcclAllReduceStartThunk *>(thunk)) {
+      std::cout << ", source: " << nccl_async_start_thunk->buffers()[0].source_buffer;
+      std::cout << ", dest: " << nccl_async_start_thunk->buffers()[0].destination_buffer;
+      std::cout << std::endl;
+    } else if (auto *kernel_thunk = dynamic_cast<const gpu::KernelThunk *>(thunk)) {
+      for (int i = 0; i < kernel_thunk->arguments().size(); ++i) {
+        const auto &argument = kernel_thunk->arguments()[i];
+        const auto is_write = kernel_thunk->written()[i];
+        std::cout << ", ";
+        if (is_write) {
+          std::cout << "in";
+        } else {
+          std::cout << "out";
+        }
+        std::cout << argument.allocation();
+      }
       std::cout << std::endl;
     } else {
       std::cout << std::endl;

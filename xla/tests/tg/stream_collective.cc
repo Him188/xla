@@ -167,6 +167,7 @@ XlaComputation BuildWhileAllReduceComputation() {
 
     // --- your original computation ------------------------------------- //
     XlaOp add_acc = AllReduce(A + B, CreateScalarAddComputation(F32, &body_b));
+    add_acc = Dot(add_acc, B);
     XlaOp mul_acc = AllReduce(add_acc * A, CreateScalarAddComputation(F32, &body_b));
 
     // Feed results forward to preserve true dependencies between
@@ -200,98 +201,111 @@ TEST(GpuSpmd, AddReduceTwoWay) {
   // builder.SetSharding(shard_proto);
   // builder.ClearSharding();
 
-  using namespace xla_test_util;
+  auto round = [&](const int round_number) {
+    using namespace xla_test_util;
 
-  constexpr int64_t N = 1024, M = 1024;
-  const Shape mat_shape = ShapeUtil::MakeShape(F32, {N, M});
-  const Shape slice_shape = ShapeUtil::MakeShape(F32, {N / 2, M});
+    constexpr int64_t N = 1024, M = 1024;
+    const Shape mat_shape = ShapeUtil::MakeShape(F32, {N, M});
+    const Shape slice_shape = ShapeUtil::MakeShape(F32, {N / 2, M});
 
-  // ----------------- build HLO ------------------------------------------ //
-  XlaBuilder builder("add_allreduce_2gpu");
+    // ----------------- build HLO ------------------------------------------ //
+    XlaBuilder builder("add_allreduce_2gpu");
 
-  // shard inputs row-wise : {devices=[2,1] 0,1}
-  // auto shard_proto = HloSharding::IotaTile({2, 1}).ToProto();
-  // builder.SetSharding(shard_proto);
-  XlaOp A = Parameter(&builder, 0, mat_shape, "A");
-  XlaOp B = Parameter(&builder, 1, mat_shape, "B");
-  // builder.ClearSharding();
+    // shard inputs row-wise : {devices=[2,1] 0,1}
+    // auto shard_proto = HloSharding::IotaTile({2, 1}).ToProto();
+    // builder.SetSharding(shard_proto);
+    XlaOp A = Parameter(&builder, 0, mat_shape, "A");
+    XlaOp B = Parameter(&builder, 1, mat_shape, "B");
+    // builder.ClearSharding();
 
-  XlaOp plusAcc = AllReduce(A + B, CreateScalarAddComputation(F32, &builder));
-  XlaOp mulAcc = AllReduce(plusAcc * A, CreateScalarAddComputation(F32, &builder));
-  XlaOp root = Tuple(&builder, {plusAcc * mulAcc});
+    XlaOp plusAcc = AllReduce(A + B, CreateScalarAddComputation(F32, &builder));
+    XlaOp mulAcc = AllReduce(plusAcc * A, CreateScalarAddComputation(F32, &builder));
+    XlaOp root = Tuple(&builder, {plusAcc * mulAcc});
 
-  // TF_ASSERT_OK_AND_ASSIGN(auto computation, builder.Build(root));
-  auto computation = BuildWhileAllReduceComputation();
+    // TF_ASSERT_OK_AND_ASSIGN(auto computation, builder.Build(root));
+    auto computation = BuildWhileAllReduceComputation();
 
-  // ---------------- PJRT client / compilation -------------------------- //
-  GpuClientOptions opts;
-  TF_ASSERT_OK_AND_ASSIGN(auto client_uptr, xla::GetStreamExecutorGpuClient(opts));
-  auto &client = *client_uptr;
+    // ---------------- PJRT client / compilation -------------------------- //
+    GpuClientOptions opts;
+    TF_ASSERT_OK_AND_ASSIGN(auto client_uptr, xla::GetStreamExecutorGpuClient(opts));
+    auto &client = *client_uptr;
 
-  ASSERT_GE(client.addressable_devices().size(), 2) << "Need at least two visible CUDA devices.";
+    ASSERT_GE(client.addressable_devices().size(), 2) << "Need at least two visible CUDA devices.";
 
-  CompileOptions copts;
-  auto &eb = copts.executable_build_options;
-  eb.set_num_replicas(2);
-  eb.set_num_partitions(1);
+    CompileOptions copts;
+    auto &eb = copts.executable_build_options;
+    eb.set_num_replicas(2);
+    eb.set_num_partitions(1);
 
-  TF_ASSERT_OK_AND_ASSIGN(auto da, client.GetDefaultDeviceAssignment(2, 1));
-  eb.set_device_assignment(da);
+    TF_ASSERT_OK_AND_ASSIGN(auto da, client.GetDefaultDeviceAssignment(2, 1));
+    eb.set_device_assignment(da);
 
-  auto *dbg = eb.mutable_debug_options();
-  dbg->set_xla_gpu_enable_latency_hiding_scheduler(true);
-  dbg->set_xla_gpu_dump_llvmir(true);
-  dbg->set_xla_dump_hlo_as_html(true);
-  dbg->set_xla_gpu_enable_pipelined_collectives(true);
-  dbg->set_xla_gpu_enable_pipelined_all_reduce(true);
-  dbg->set_xla_gpu_enable_highest_priority_async_stream(true);
+    auto *dbg = eb.mutable_debug_options();
+    dbg->set_xla_gpu_enable_latency_hiding_scheduler(true);
+    dbg->set_xla_gpu_dump_llvmir(true);
+    dbg->set_xla_dump_hlo_as_html(true);
+    dbg->set_xla_gpu_enable_pipelined_collectives(true);
+    dbg->set_xla_gpu_enable_pipelined_all_reduce(true);
+    // dbg->set_xla_gpu_enable_highest_priority_async_stream(true);
+    // dbg->set_xla_gpu_async_dot(true);
 
-  dbg->clear_xla_gpu_enable_command_buffer();
-  dbg->add_xla_gpu_enable_command_buffer(DebugOptions_CommandBufferCmdType_INVALID);
+    dbg->clear_xla_gpu_enable_command_buffer();
+    dbg->add_xla_gpu_enable_command_buffer(DebugOptions_CommandBufferCmdType_INVALID);
 
-  // dbg->set_xla_gpu_all_reduce_combine_threshold_bytes(0);
-  dbg->set_xla_gpu_enable_nccl_user_buffers(true);
+    // dbg->set_xla_gpu_all_reduce_combine_threshold_bytes(0);
+    // dbg->set_xla_gpu_enable_nccl_user_buffers(true);
 
-  TF_ASSERT_OK_AND_ASSIGN(auto exe, client.Compile(computation, copts));
+    TF_ASSERT_OK_AND_ASSIGN(auto exe, client.Compile(computation, copts));
 
-  // ---------------- host data ------------------------------------------ //
-  PjRtDevice *dev0 = client.addressable_devices()[0];
-  PjRtDevice *dev1 = client.addressable_devices()[1];
-  ASSERT_TRUE(dev0 != nullptr);
-  ASSERT_TRUE(dev1 != nullptr);
+    // ---------------- host data ------------------------------------------ //
+    PjRtDevice *dev0 = client.addressable_devices()[0];
+    PjRtDevice *dev1 = client.addressable_devices()[1];
+    ASSERT_TRUE(dev0 != nullptr);
+    ASSERT_TRUE(dev1 != nullptr);
 
-  auto [bufferA0, literalA0] = CreateDeviceBuffer(client, mat_shape, 1.0f, *dev0);
-  auto [bufferB0, literalB0] = CreateDeviceBuffer(client, mat_shape, 2.0f, *dev0);
+    auto [bufferA0, literalA0] = CreateDeviceBuffer(client, mat_shape, 1.0f, *dev0);
+    auto [bufferB0, literalB0] = CreateDeviceBuffer(client, mat_shape, 2.0f, *dev0);
 
-  auto [bufferA1, literalA1] = CreateDeviceBuffer(client, mat_shape, 3.0f, *dev1);
-  auto [bufferB1, literalB1] = CreateDeviceBuffer(client, mat_shape, 4.0f, *dev1);
+    auto [bufferA1, literalA1] = CreateDeviceBuffer(client, mat_shape, 3.0f, *dev1);
+    auto [bufferB1, literalB1] = CreateDeviceBuffer(client, mat_shape, 4.0f, *dev1);
 
-  std::vector<std::vector<PjRtBuffer *>> args = {
-      {bufferA0.get(), bufferB0.get()}, // replica 0
-      {bufferA1.get(), bufferB1.get()}  // replica 1
+    std::vector<std::vector<PjRtBuffer *>> args = {
+        {bufferA0.get(), bufferB0.get()}, // replica 0
+        {bufferA1.get(), bufferB1.get()}  // replica 1
+    };
+
+    // ---------------- execute & verify ----------------------------------- //
+    gpu::ConcurrencyTracer tracer;
+    ExecuteOptions exec_opts;
+    exec_opts.gpu_concurrency_tracer = &tracer;
+    exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
+    auto outs = exe->Execute(args, exec_opts).value();
+
+    ASSERT_EQ(outs.size(), 2);
+    for (int p = 0; p < 2; ++p) {
+      ASSERT_EQ(outs[p].size(), 1);
+      TF_ASSERT_OK_AND_ASSIGN(auto lit, outs[p][0]->ToLiteralSync());
+      float v = lit->DecomposeTuple()[0].Get<float>({0, 0});
+      EXPECT_NEAR(v, 400.0f, 1e-4); // (1+2)+(3+4) = 10, *2 = 20
+    }
+
+    // PrintIrDumps(dump_dir, {IRDumpKind::kHTML});
+
+    if (round_number == 0) {
+      print_gpu_thunk_info(exe.get());
+      tracer.PrintTraces(std::cout);
+    }
+    auto races = tracer.DetectDataRaces();
+
+    std::cout << "Round " << round_number << ": " << "races=" << races.size() << std::endl;
+    if (!races.empty()) {
+      tracer.PrintDataRaces(std::cout);
+    }
   };
 
-  // ---------------- execute & verify ----------------------------------- //
-  gpu::ConcurrencyTracer tracer;
-  ExecuteOptions exec_opts;
-  exec_opts.gpu_concurrency_tracer = &tracer;
-  exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
-  auto outs = exe->Execute(args, exec_opts).value();
-
-  print_gpu_thunk_info(exe.get());
-
-  ASSERT_EQ(outs.size(), 2);
-  for (int p = 0; p < 2; ++p) {
-    ASSERT_EQ(outs[p].size(), 1);
-    TF_ASSERT_OK_AND_ASSIGN(auto lit, outs[p][0]->ToLiteralSync());
-    float v = lit->DecomposeTuple()[0].Get<float>({0, 0});
-    EXPECT_NEAR(v, 400.0f, 1e-4); // (1+2)+(3+4) = 10, *2 = 20
+  for (int i = 0; i < 1; ++i) {
+    round(i);
   }
-
-  PrintIrDumps(dump_dir, {IRDumpKind::kHTML});
-
-  tracer.PrintTraces(std::cout);
-  tracer.PrintDataRaces(std::cout);
 }
 } // namespace
 

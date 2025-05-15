@@ -29,6 +29,8 @@ static const stream_executor::gpu::CudaEvent& AssertCuda(
 //   return AssertCuda(&stream);
 // }
 
+constexpr bool ENABLE_LOGS = false;
+
 ConcurrencyTracer::ConcurrencyTracer() = default;
 ConcurrencyTracer::~ConcurrencyTracer() = default;
 void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
@@ -41,8 +43,11 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
       Thunk::GetStreamForExecution(thunk.execution_stream_id(), params).value();
   const int device_ordinal = params.buffer_allocations->device_ordinal();
 
-  std::cout << "[device=" << device_ordinal << "][Stream] Launching thunk on stream S_" << stream->GetName()
-            << ": " << Thunk::KindToString(thunk.kind()) << std::endl;
+  if (ENABLE_LOGS) {
+    std::cout << "[device=" << device_ordinal
+              << "][Stream] Launching thunk on stream S_" << stream->GetName()
+              << ": " << Thunk::KindToString(thunk.kind()) << std::endl;
+  }
 
   SourceInfo source{&thunk};
 
@@ -138,8 +143,10 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
 
 void ConcurrencyTracer::OnStreamEventRecord(const se::Stream& stream,
                                             const se::Event& event) {
-  std::cout << "[Stream] S_" << stream.GetName() << " recorded "
-            << "E_" << AssertCuda(event).GetHandle() << std::endl;
+  if (ENABLE_LOGS) {
+    std::cout << "[Stream] S_" << stream.GetName() << " recorded "
+              << "E_" << AssertCuda(event).GetHandle() << std::endl;
+  }
 
   AddTrace<EventRecord>(stream.platform_specific_handle().stream,
                         static_cast<void*>(AssertCuda(&event).GetHandle()));
@@ -147,8 +154,10 @@ void ConcurrencyTracer::OnStreamEventRecord(const se::Stream& stream,
 
 void ConcurrencyTracer::OnStreamEventWait(const se::Stream& stream,
                                           const se::Event& event) {
-  std::cout << "[Stream] E_" << AssertCuda(event).GetHandle() << " -> "
-            << "S_" << stream.GetName() << std::endl;
+  if (ENABLE_LOGS) {
+    std::cout << "[Stream] E_" << AssertCuda(event).GetHandle() << " -> "
+              << "S_" << stream.GetName() << std::endl;
+  }
 
   AddTrace<WaitForEvent>(stream.platform_specific_handle().stream,
                          static_cast<void*>(AssertCuda(&event).GetHandle()));
@@ -416,7 +425,9 @@ ConcurrencyTracer::EdgeList ConcurrencyTracer::BuildHappensBeforeGraph() const {
       const auto event =
           dynamic_cast<const EventRecord*>(trace_[event_index].get());
       ABSL_ASSERT(event != nullptr && "EventRecord expected");
-      ABSL_ASSERT(event->stream_id == async_stream_id && "Stream id of the completion event must match the async stream id of the CollectiveStart");
+      ABSL_ASSERT(event->stream_id == async_stream_id &&
+                  "Stream id of the completion event must match the async "
+                  "stream id of the CollectiveStart");
       add_edge(i, rec_it->second);
     }
 
