@@ -154,11 +154,11 @@ void xla_test_util::print_gpu_thunk_sequence(se::StreamExecutor *stream_executor
         const auto is_write = kernel_thunk->written()[i];
         std::cout << ", ";
         if (is_write) {
-          std::cout << "in";
+          std::cout << "in ";
         } else {
-          std::cout << "out";
+          std::cout << "out ";
         }
-        std::cout << argument.allocation();
+        std::cout << argument;
       }
       std::cout << std::endl;
     } else {
