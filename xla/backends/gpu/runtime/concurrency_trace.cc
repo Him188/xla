@@ -39,12 +39,12 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
 
   auto* stream =
       Thunk::GetStreamForExecution(thunk.execution_stream_id(), params).value();
+  const int device_ordinal = params.buffer_allocations->device_ordinal();
 
-  std::cout << "[Stream] Launching thunk on stream S_" << stream->GetName()
+  std::cout << "[device=" << device_ordinal << "][Stream] Launching thunk on stream S_" << stream->GetName()
             << ": " << Thunk::KindToString(thunk.kind()) << std::endl;
 
   SourceInfo source{&thunk};
-  const int device_ordinal = params.buffer_allocations->device_ordinal();
 
   /* ---------------------------- ordinary thunks --------------------------- */
   if (THUNK_CASE(GemmThunk)) {
