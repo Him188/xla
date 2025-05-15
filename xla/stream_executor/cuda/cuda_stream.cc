@@ -266,7 +266,7 @@ void DestroyStream(StreamExecutor* executor, CUstream stream) {
 }
 
 absl::Status SynchronizeStream(StreamExecutor* executor, CUstream stream) {
-  std::cout << "[Stream] " << "Synchronize S" << stream << std::endl;
+  // std::cout << "[Stream] " << "Synchronize S" << stream << std::endl;
 
   std::unique_ptr<ActivateContext> activation = executor->Activate();
   CHECK(stream != nullptr);
