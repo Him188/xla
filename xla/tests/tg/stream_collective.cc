@@ -170,6 +170,14 @@ XlaComputation BuildWhileAllReduceComputation() {
     add_acc = Dot(add_acc, B);
     XlaOp mul_acc = AllReduce(add_acc * A, CreateScalarAddComputation(F32, &body_b));
 
+    // TODO: these are for latency hiding tests
+    // XlaOp add_acc = AllReduce(A / B, CreateScalarAddComputation(F32, &body_b));
+    // XlaOp minus_acc = AllReduce(A + B, CreateScalarAddComputation(F32, &body_b));
+    // // add_acc = Dot(add_acc, B);
+    // minus_acc = Dot(minus_acc, A);
+    // XlaOp mul_acc = AllReduce(add_acc * minus_acc, CreateScalarMultiplyComputation(F32, &body_b));
+    // // add_acc = Dot(mul_acc, add_acc);
+
     // Feed results forward to preserve true dependencies between
     // successive iterations – required for pipelining legality.
     XlaOp next_iter = iter + xla::ConstantR0<int32_t>(&body_b, 1);
@@ -220,7 +228,9 @@ TEST(GpuSpmd, AddReduceTwoWay) {
 
     XlaOp plusAcc = AllReduce(A + B, CreateScalarAddComputation(F32, &builder));
     XlaOp mulAcc = AllReduce(plusAcc * A, CreateScalarAddComputation(F32, &builder));
-    XlaOp root = Tuple(&builder, {plusAcc * mulAcc});
+    XlaOp minusAcc = AllReduce(A - B, CreateScalarAddComputation(F32, &builder));
+    XlaOp res = AllReduce(plusAcc * minusAcc, CreateScalarAddComputation(F32, &builder));
+    XlaOp root = Tuple(&builder, {res * res});
 
     // TF_ASSERT_OK_AND_ASSIGN(auto computation, builder.Build(root));
     auto computation = BuildWhileAllReduceComputation();
@@ -246,6 +256,7 @@ TEST(GpuSpmd, AddReduceTwoWay) {
     dbg->set_xla_dump_hlo_as_html(true);
     dbg->set_xla_gpu_enable_pipelined_collectives(true);
     dbg->set_xla_gpu_enable_pipelined_all_reduce(true);
+    dbg->set_xla_gpu_all_reduce_combine_threshold_bytes(999999999999);
     // dbg->set_xla_gpu_enable_highest_priority_async_stream(true);
     // dbg->set_xla_gpu_async_dot(true);
 
