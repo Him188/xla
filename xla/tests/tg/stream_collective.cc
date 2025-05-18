@@ -131,11 +131,12 @@ TEST(PJRTReplicasTest, DotAllReduceTwoReplicas) {
   }
 }
 
-XlaComputation BuildWhileAllReduceComputation() {
-  constexpr int64_t N = 1024, M = 1024;
-  const Shape s32_shape = ShapeUtil::MakeShape(xla::S32, {});
-  const Shape mat_shape = ShapeUtil::MakeShape(F32, {N, M});
+constexpr int64_t N = 1024, M = 1024;
+const Shape s32_shape = ShapeUtil::MakeShape(xla::S32, {});
+const Shape mat_shape = ShapeUtil::MakeShape(F32, {N, M});
+const Shape sliced_shape = ShapeUtil::MakeShape(F32, {100, 100});
 
+XlaComputation BuildWhileAllReduceComputation() {
   XlaBuilder top("add_allreduce_loop");
 
   // Feed-in matrices for the *first* iteration.
@@ -144,13 +145,13 @@ XlaComputation BuildWhileAllReduceComputation() {
   XlaOp iter0 = xla::ConstantR0<int32_t>(&top, 0);
 
   // Tuple<iter, A, B> becomes the loop-carried state.
-  XlaOp init_state = Tuple(&top, {iter0, A0, B0});
+  XlaOp init_state = Tuple(&top, {iter0, A0, Slice(A0, {100, 100}, {200, 200}, {1,1})});
 
   // ---------------- loop condition --------------------------------------- //
   XlaBuilder cond_b("cond");
   {
     constexpr int32_t kLoopTripCount = 8;
-    XlaOp p = Parameter(&cond_b, 0, ShapeUtil::MakeTupleShape({s32_shape, mat_shape, mat_shape}), "state");
+    XlaOp p = Parameter(&cond_b, 0, ShapeUtil::MakeTupleShape({s32_shape, mat_shape, sliced_shape}), "state");
     XlaOp iter = GetTupleElement(p, 0);
     Lt(iter, xla::ConstantR0<int32_t>(&cond_b, kLoopTripCount));
   }
@@ -160,15 +161,18 @@ XlaComputation BuildWhileAllReduceComputation() {
   XlaBuilder body_b("body");
   XlaOp next_state;
   {
-    XlaOp p = Parameter(&body_b, 0, ShapeUtil::MakeTupleShape({s32_shape, mat_shape, mat_shape}), "state");
+    XlaOp p = Parameter(&body_b, 0, ShapeUtil::MakeTupleShape({s32_shape, mat_shape, sliced_shape}), "state");
     XlaOp iter = GetTupleElement(p, 0);
     XlaOp A = GetTupleElement(p, 1);
-    XlaOp B = GetTupleElement(p, 2);
+    XlaOp acc = GetTupleElement(p, 2);
+
+    XlaOp a_slice = Slice(A, {100, 100}, {200, 200}, {1,1});
+    XlaOp a_slice2 = Slice(A, {150, 150}, {250, 250}, {1,1});
 
     // --- your original computation ------------------------------------- //
-    XlaOp add_acc = AllReduce(A + B, CreateScalarAddComputation(F32, &body_b));
-    add_acc = Dot(add_acc, B);
-    XlaOp mul_acc = AllReduce(add_acc * A, CreateScalarAddComputation(F32, &body_b));
+    XlaOp add_acc = AllReduce(a_slice, CreateScalarAddComputation(F32, &body_b));
+    add_acc = Dot(add_acc, a_slice2);
+    XlaOp mul_acc = AllReduce(a_slice2, CreateScalarAddComputation(F32, &body_b));
 
     // TODO: these are for latency hiding tests
     // XlaOp add_acc = AllReduce(A / B, CreateScalarAddComputation(F32, &body_b));
@@ -181,7 +185,7 @@ XlaComputation BuildWhileAllReduceComputation() {
     // Feed results forward to preserve true dependencies between
     // successive iterations – required for pipelining legality.
     XlaOp next_iter = iter + xla::ConstantR0<int32_t>(&body_b, 1);
-    next_state = Tuple(&body_b, {next_iter, add_acc, mul_acc});
+    next_state = Tuple(&body_b, {next_iter, A, acc + mul_acc});
     // Return the updated tuple
   }
   XlaComputation body = body_b.Build(next_state).value();
@@ -211,10 +215,6 @@ TEST(GpuSpmd, AddReduceTwoWay) {
 
   auto round = [&](const int round_number) {
     using namespace xla_test_util;
-
-    constexpr int64_t N = 1024, M = 1024;
-    const Shape mat_shape = ShapeUtil::MakeShape(F32, {N, M});
-    const Shape slice_shape = ShapeUtil::MakeShape(F32, {N / 2, M});
 
     // ----------------- build HLO ------------------------------------------ //
     XlaBuilder builder("add_allreduce_2gpu");
@@ -256,7 +256,7 @@ TEST(GpuSpmd, AddReduceTwoWay) {
     dbg->set_xla_dump_hlo_as_html(true);
     dbg->set_xla_gpu_enable_pipelined_collectives(true);
     dbg->set_xla_gpu_enable_pipelined_all_reduce(true);
-    dbg->set_xla_gpu_experimental_parallel_collective_overlap_limit(4);
+    // dbg->set_xla_gpu_experimental_parallel_collective_overlap_limit(4);
     // dbg->set_xla_gpu_all_reduce_combine_threshold_bytes(999999999999);
     // dbg->set_xla_gpu_enable_highest_priority_async_stream(true);
     // dbg->set_xla_gpu_async_dot(true);
