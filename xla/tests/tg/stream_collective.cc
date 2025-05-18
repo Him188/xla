@@ -256,7 +256,8 @@ TEST(GpuSpmd, AddReduceTwoWay) {
     dbg->set_xla_dump_hlo_as_html(true);
     dbg->set_xla_gpu_enable_pipelined_collectives(true);
     dbg->set_xla_gpu_enable_pipelined_all_reduce(true);
-    dbg->set_xla_gpu_all_reduce_combine_threshold_bytes(999999999999);
+    dbg->set_xla_gpu_experimental_parallel_collective_overlap_limit(4);
+    // dbg->set_xla_gpu_all_reduce_combine_threshold_bytes(999999999999);
     // dbg->set_xla_gpu_enable_highest_priority_async_stream(true);
     // dbg->set_xla_gpu_async_dot(true);
 
