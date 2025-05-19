@@ -37,6 +37,7 @@ cc_library(
     srcs = ["concurrency_test_base.cc"],
     hdrs = ["concurrency_test_base.h"],
     deps = [
+        "//xla/pjrt/gpu:se_gpu_pjrt_client",
         "//xla/tests:hlo_pjrt_interpreter_reference_mixin",
         "//xla/tests:hlo_pjrt_test_base",
     ],
@@ -47,7 +48,10 @@ xla_test(
     srcs = [
         "latency_hiding_scheduler_concurrency_tests.cc",
     ],
-    tags = ["test_migrated_to_hlo_runner_pjrt"],
+    tags = [
+        "requires-gpu-nvidia:2",
+        "test_migrated_to_hlo_runner_pjrt",
+    ],
     deps = [
         ":concurrency_test_base",
         "//xla:test",

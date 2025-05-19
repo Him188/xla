@@ -8,6 +8,7 @@
 #include "xla/pjrt/plugin/xla_gpu/xla_gpu_client_options.h"
 #include "xla/tests/concurrency_trace/concurrency_test_base.h"
 #include "xla/tests/test_macros.h"
+#include "xla/tests/tg/test_util.h"
 #include "xla/tsl/lib/core/status_test_util.h"
 
 #include <gmock/gmock-matchers.h>
@@ -15,120 +16,13 @@
 
 namespace xla {
 
-template <typename NativeT>
-std::pair<std::unique_ptr<PjRtBuffer>, std::shared_ptr<Literal>> CreateDeviceBufferR1(PjRtClient &client, const Shape &shape, NativeT value,
-                                                                                      PjRtDevice &device) {
-  std::vector<NativeT> host(shape.dimensions(0), value);
-  Literal literal = LiteralUtil::CreateR1<NativeT>(host);
-  const auto literal_ptr = std::make_shared<Literal>(std::move(literal));
-
-  auto buffer = client.BufferFromHostLiteral(*literal_ptr.get(), device.default_memory_space().value()).value();
-  return {std::move(buffer), literal_ptr};
-}
-
-template <typename NativeT>
-std::pair<std::unique_ptr<PjRtBuffer>, std::shared_ptr<Literal>> CreateDeviceBufferR0(PjRtClient &client, NativeT value, PjRtDevice &device) {
-  Literal literal = LiteralUtil::CreateR0<NativeT>(value);
-  const auto literal_ptr = std::make_shared<Literal>(std::move(literal));
-
-  auto buffer = client.BufferFromHostLiteral(*literal_ptr.get(), device.default_memory_space().value()).value();
-  return {std::move(buffer), literal_ptr};
-}
-
-// Builds and returns the HLO module.
-std::unique_ptr<HloModule> BuildModule() {
-
-  using xla::BF16;
-  using xla::HloComputation;
-  using xla::HloInstruction;
-  using xla::HloModule;
-  using xla::HloModuleConfig;
-  using xla::Shape;
-  using xla::ShapeUtil;
-
-  // ---------------------------------------------------------------------------
-  // Module & common shapes
-  // ---------------------------------------------------------------------------
-  HloModuleConfig config;
-  auto module = std::make_unique<HloModule>("module", config);
-
-  const Shape array_shape = ShapeUtil::MakeShape(BF16, {8});
-  const Shape pred_shape = ShapeUtil::MakeShape(xla::PRED, {});
-  const Shape tuple_shape = ShapeUtil::MakeTupleShape({array_shape, array_shape, pred_shape});
-
-  // ---------------------------------------------------------------------------
-  // while_cond computation
-  // ---------------------------------------------------------------------------
-  {
-    HloComputation::Builder cond_builder("while_cond");
-
-    auto param = cond_builder.AddInstruction(HloInstruction::CreateParameter(/*parameter_number=*/0, tuple_shape, "param"));
-
-    auto gte = cond_builder.AddInstruction(HloInstruction::CreateGetTupleElement(pred_shape, param, /*index=*/2));
-
-    module->AddEmbeddedComputation(cond_builder.Build(gte));
-  }
-  HloComputation *cond_comp = module->GetComputationWithName("while_cond");
-
-  // ---------------------------------------------------------------------------
-  // while_body computation
-  // ---------------------------------------------------------------------------
-  {
-    HloComputation::Builder body_builder("while_body");
-
-    auto param = body_builder.AddInstruction(HloInstruction::CreateParameter(/*parameter_number=*/0, tuple_shape, "param"));
-
-    auto gte0 = body_builder.AddInstruction(HloInstruction::CreateGetTupleElement(array_shape, param, /*index=*/0));
-    auto gte1 = body_builder.AddInstruction(HloInstruction::CreateGetTupleElement(pred_shape, param, /*index=*/2));
-
-    auto bitcast = body_builder.AddInstruction(HloInstruction::CreateBitcast(array_shape, gte0));
-
-    const std::vector<std::pair<int64_t, int64_t>> permute1_pairs = {{0, 1}, {1, 0}};
-    auto cp1 = body_builder.AddInstruction(HloInstruction::CreateCollectivePermute(array_shape, gte0, permute1_pairs, std::nullopt));
-
-    auto add0 = body_builder.AddInstruction(HloInstruction::CreateBinary(array_shape, xla::HloOpcode::kAdd, cp1, bitcast));
-
-    auto negate = body_builder.AddInstruction(HloInstruction::CreateUnary(array_shape, xla::HloOpcode::kNegate, add0));
-
-    const std::vector<std::pair<int64_t, int64_t>> permute2_pairs = {{1, 0}, {0, 1}};
-    auto cp2 = body_builder.AddInstruction(HloInstruction::CreateCollectivePermute(array_shape, cp1, permute2_pairs, std::nullopt));
-
-    auto tuple_inst = body_builder.AddInstruction(HloInstruction::CreateTuple({cp2, negate, gte1}));
-
-    module->AddEmbeddedComputation(body_builder.Build(tuple_inst));
-  }
-  HloComputation *body_comp = module->GetComputationWithName("while_body");
-
-  // ---------------------------------------------------------------------------
-  // entry computation
-  // ---------------------------------------------------------------------------
-  HloComputation::Builder entry_builder("entry");
-
-  auto p0 = entry_builder.AddInstruction(HloInstruction::CreateParameter(0, array_shape, "p0"));
-  auto p1 = entry_builder.AddInstruction(HloInstruction::CreateParameter(1, array_shape, "p1"));
-  auto p2 = entry_builder.AddInstruction(HloInstruction::CreateParameter(2, pred_shape, "p2"));
-
-  auto tuple_entry = entry_builder.AddInstruction(HloInstruction::CreateTuple({p0, p1, p2}));
-
-  auto while_inst = entry_builder.AddInstruction(HloInstruction::CreateWhile(tuple_shape, cond_comp, body_comp, tuple_entry));
-
-  auto gte0_e = entry_builder.AddInstruction(HloInstruction::CreateGetTupleElement(array_shape, while_inst, /*index=*/0));
-  auto gte1_e = entry_builder.AddInstruction(HloInstruction::CreateGetTupleElement(array_shape, while_inst, /*index=*/1));
-
-  auto add_root = entry_builder.AddInstruction(HloInstruction::CreateBinary(array_shape, xla::HloOpcode::kAdd, gte0_e, gte1_e));
-
-  module->AddEntryComputation(entry_builder.Build(add_root));
-
-  return module;
-}
-
-class LatencyHidingSchedulerConcurrencyTests : public ConcurrencyTestBase {
+class LatencyHidingSchedulerConcurrencyTests : public PjRtGpuStreamExecutorConcurrencyTestBase {
 protected:
   DebugOptions GetDebugOptionsForTest() const override {
-    DebugOptions dbg = ConcurrencyTestBase::GetDebugOptionsForTest();
+    DebugOptions dbg = PjRtGpuStreamExecutorConcurrencyTestBase::GetDebugOptionsForTest();
     dbg.set_xla_gpu_enable_latency_hiding_scheduler(true);
-    dbg.set_xla_gpu_dump_llvmir(true);
-    dbg.set_xla_dump_hlo_as_html(true);
+    // dbg.set_xla_gpu_dump_llvmir(true);
+    // dbg.set_xla_dump_hlo_as_html(true);
     dbg.set_xla_gpu_enable_pipelined_collectives(true);
     dbg.set_xla_gpu_enable_pipelined_all_reduce(true);
     dbg.set_xla_gpu_all_reduce_combine_threshold_bytes(999999999999);
@@ -141,30 +35,65 @@ protected:
   absl::StatusOr<std::unique_ptr<HloModule>> ParseHloText(absl::string_view hlo_string) {
     return ParseAndReturnVerifiedModule(hlo_string, GetModuleConfigForTest());
   }
+
+  struct DeviceMesh {
+    int num_replicas;
+    int num_partitions;
+  };
+
+  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> Compile(const std::string_view hlo_string, const DeviceMesh &mesh) {
+    TF_ASSIGN_OR_RETURN(const auto module, ParseHloText(hlo_string));
+
+    module->mutable_config().set_replica_count(mesh.num_replicas);
+
+    CompileOptions copts;
+    auto &eb = copts.executable_build_options;
+    eb.set_num_replicas(mesh.num_replicas);
+    eb.set_num_partitions(mesh.num_partitions);
+
+    TF_ASSIGN_OR_RETURN(const auto device_assignment, client().GetDefaultDeviceAssignment(mesh.num_replicas, mesh.num_partitions));
+    eb.set_device_assignment(device_assignment);
+    *eb.mutable_debug_options() = GetDebugOptionsForTest();
+    return client().Compile({module->ToProto()}, copts).value();
+  }
+
+  absl::StatusOr<std::vector<std::vector<std::unique_ptr<PjRtBuffer>>>>
+  Execute(PjRtLoadedExecutable &executable, const absl::Span<const absl::Span<const LiteralSlice>> args, const ExecuteOptions &exec_opts = {}) const {
+    // Create device buffers for literals
+    std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> buffers;
+    buffers.reserve(args.size());
+
+    for (size_t device_index = 0; device_index < args.size(); ++device_index) {
+      TF_ASSIGN_OR_RETURN(auto *mem_space, client().addressable_devices()[device_index]->default_memory_space());
+      auto &device_buffers = buffers.emplace_back();
+      device_buffers.reserve(args[device_index].size());
+
+      for (const LiteralSlice &arg : args[device_index]) {
+        TF_ASSIGN_OR_RETURN(auto buffer, client().BufferFromHostLiteral(arg, mem_space));
+        device_buffers.emplace_back(std::move(buffer));
+      }
+    }
+
+    // Get pointer views
+    std::vector<std::vector<PjRtBuffer *>> buffer_ptrs;
+    buffer_ptrs.reserve(buffers.size());
+
+    for (auto &device_buffers : buffers) {
+      auto &ptrs = buffer_ptrs.emplace_back();
+      ptrs.reserve(device_buffers.size());
+      for (auto &buf : device_buffers)
+        ptrs.push_back(buf.get());
+    }
+
+    TF_ASSIGN_OR_RETURN(auto res, executable.Execute(buffer_ptrs, exec_opts));
+    return res;
+  }
 };
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllScatterBug) {
   setenv("NCCL_DEBUG", "WARN", 1);
 
-  // ----------------- build HLO -------------------------------------------- //
-  XlaBuilder builder("add_allreduce_2gpu");
-
-  const Shape mat_shape = ShapeUtil::MakeShape(BF16, {8});
-  const Shape pred_shape = ShapeUtil::MakeShape(PRED, {});
-
-  // ---------------- PJRT client / compilation ---------------------------- //
-  GpuClientOptions opts;
-  auto client_uptr = xla::GetStreamExecutorGpuClient(opts).value();
-  auto &client = *client_uptr;
-
-  ASSERT_GE(client.addressable_devices().size(), 2) << "Need at least two visible CUDA devices.";
-
-  CompileOptions copts;
-  auto &eb = copts.executable_build_options;
-  eb.set_num_replicas(2);
-  eb.set_num_partitions(1);
-  eb.set_device_assignment(client.GetDefaultDeviceAssignment(2, 1).value());
-  *eb.mutable_debug_options() = GetDebugOptionsForTest();
+  ASSERT_GE(client().addressable_devices().size(), 2) << "Need at least two visible CUDA devices.";
 
   const auto hlo_string = R"(
 HloModule module
@@ -197,48 +126,41 @@ ENTRY entry {
   ROOT add = bf16[8]{0} add(gte0, gte1)
 }
 )";
-  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseHloText(hlo_string));
-
-  module->mutable_config().set_replica_count(2);
-  auto exe = client.Compile({module->ToProto()}, copts).value();
+  TF_ASSERT_OK_AND_ASSIGN(auto exe, Compile(hlo_string, {2, 1}));
 
   // ---------------- host data -------------------------------------------- //
-  PjRtDevice *dev0 = client.addressable_devices()[0];
-  PjRtDevice *dev1 = client.addressable_devices()[1];
+  Literal mat = LiteralUtil::CreateFull({8}, static_cast<bfloat16>(1.0f));
+  Literal pred = LiteralUtil::CreateR0<bool>(false);
 
-  auto [bufferA0, literalA0] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev0);
-  auto [bufferB0, literalB0] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev0);
-  auto [bufferC0, literalC0] = CreateDeviceBufferR0(client, false, *dev0);
-
-  auto [bufferA1, literalA1] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev1);
-  auto [bufferB1, literalB1] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev1);
-  auto [bufferC1, literalC1] = CreateDeviceBufferR0(client, false, *dev1);
-
-  std::vector<std::vector<PjRtBuffer *>> args = {
-      {bufferA0.get(), bufferB0.get(), bufferC0.get()},
-      {bufferA1.get(), bufferB1.get(), bufferC1.get()},
-  };
-
-  // ---------------- execute & verify ------------------------------------ //
   gpu::ConcurrencyTracer tracer;
   ExecuteOptions exec_opts;
   exec_opts.gpu_concurrency_tracer = &tracer;
   exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
 
-  auto outs = exe->Execute(args, exec_opts).value();
-
-  ASSERT_EQ(outs.size(), 2);
-  for (int p = 0; p < 2; ++p) {
-    ASSERT_EQ(outs[p].size(), 1);
-    auto lit = outs[p][0]->ToLiteralSync().value();
-    float v = lit->DecomposeTuple()[0].Get<float>({0});
-    EXPECT_NEAR(v, 4000.0f, 1e-6);
-  }
-
+  // Print compiled thunks
+  xla_test_util::print_gpu_thunk_info(exe.get());
   auto races = tracer.DetectDataRaces();
   std::cout << "races=" << races.size() << std::endl;
   if (!races.empty()) {
     tracer.PrintDataRaces(std::cout);
   }
-}
+
+  // Execute
+  TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe,
+                                             {
+                                                 {mat, mat, pred},
+                                                 {mat, mat, pred},
+                                             },
+                                             exec_opts));
+
+  // Check
+  ASSERT_EQ(outs.size(), 2);
+  for (int p = 0; p < 2; ++p) {
+    ASSERT_EQ(outs[p].size(), 1);
+    TF_ASSERT_OK_AND_ASSIGN(auto lit, outs[p][0]->ToLiteralSync());
+    float v = lit->Get<tsl::bfloat16>({0});
+    EXPECT_NEAR(v, 2.0f, 1e-6);
+  }
+
+} // namespace xla
 } // namespace xla

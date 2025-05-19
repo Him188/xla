@@ -275,11 +275,11 @@ TEST(GpuSpmd, AddReduceTwoWay) {
     ASSERT_TRUE(dev0 != nullptr);
     ASSERT_TRUE(dev1 != nullptr);
 
-    auto [bufferA0, literalA0] = CreateDeviceBuffer(client, mat_shape, 1.0f, *dev0);
-    auto [bufferB0, literalB0] = CreateDeviceBuffer(client, mat_shape, 2.0f, *dev0);
+    auto [bufferA0, literalA0] = CreateDeviceBufferR2(client, mat_shape, 1.0f, *dev0);
+    auto [bufferB0, literalB0] = CreateDeviceBufferR2(client, mat_shape, 2.0f, *dev0);
 
-    auto [bufferA1, literalA1] = CreateDeviceBuffer(client, mat_shape, 3.0f, *dev1);
-    auto [bufferB1, literalB1] = CreateDeviceBuffer(client, mat_shape, 4.0f, *dev1);
+    auto [bufferA1, literalA1] = CreateDeviceBufferR2(client, mat_shape, 3.0f, *dev1);
+    auto [bufferB1, literalB1] = CreateDeviceBufferR2(client, mat_shape, 4.0f, *dev1);
 
     std::vector<std::vector<PjRtBuffer *>> args = {
         {bufferA0.get(), bufferB0.get()}, // replica 0
