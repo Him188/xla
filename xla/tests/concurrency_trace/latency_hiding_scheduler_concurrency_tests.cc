@@ -85,7 +85,20 @@ protected:
         ptrs.push_back(buf.get());
     }
 
+    // Wait for the transfer
+    for (auto &device_buffers : buffers) {
+      for (const auto &buf : device_buffers) {
+        TF_RETURN_IF_ERROR(buf->GetReadyFuture().Await());
+      }
+    }
     TF_ASSIGN_OR_RETURN(auto res, executable.Execute(buffer_ptrs, exec_opts));
+
+    // Wait for the transfer
+    for (auto &device_buffers : res) {
+      for (const auto &buf : device_buffers) {
+        TF_RETURN_IF_ERROR(buf->GetReadyFuture().Await());
+      }
+    }
     return res;
   }
 };
