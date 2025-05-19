@@ -16,18 +16,23 @@
 namespace xla {
 
 template <typename NativeT>
-std::pair<std::unique_ptr<PjRtBuffer>, Literal> CreateDeviceBufferR1(PjRtClient &client, const Shape &shape, NativeT value, PjRtDevice &device) {
+std::pair<std::unique_ptr<PjRtBuffer>, std::shared_ptr<Literal>> CreateDeviceBufferR1(PjRtClient &client, const Shape &shape, NativeT value,
+                                                                                      PjRtDevice &device) {
   std::vector<NativeT> host(shape.dimensions(0), value);
   Literal literal = LiteralUtil::CreateR1<NativeT>(host);
-  auto buffer = client.BufferFromHostLiteral(literal, device.default_memory_space().value()).value();
-  return {std::move(buffer), std::move(literal)};
+  const auto literal_ptr = std::make_shared<Literal>(std::move(literal));
+
+  auto buffer = client.BufferFromHostLiteral(*literal_ptr.get(), device.default_memory_space().value()).value();
+  return {std::move(buffer), literal_ptr};
 }
 
 template <typename NativeT>
-std::pair<std::unique_ptr<PjRtBuffer>, Literal> CreateDeviceBufferR0(PjRtClient &client, const Shape & /*shape*/, NativeT value, PjRtDevice &device) {
+std::pair<std::unique_ptr<PjRtBuffer>, std::shared_ptr<Literal>> CreateDeviceBufferR0(PjRtClient &client, NativeT value, PjRtDevice &device) {
   Literal literal = LiteralUtil::CreateR0<NativeT>(value);
-  auto buffer = client.BufferFromHostLiteral(literal, device.default_memory_space().value()).value();
-  return {std::move(buffer), std::move(literal)};
+  const auto literal_ptr = std::make_shared<Literal>(std::move(literal));
+
+  auto buffer = client.BufferFromHostLiteral(*literal_ptr.get(), device.default_memory_space().value()).value();
+  return {std::move(buffer), literal_ptr};
 }
 
 // Builds and returns the HLO module.
@@ -133,8 +138,7 @@ protected:
     return dbg;
   }
 
-  absl::StatusOr<std::unique_ptr<HloModule>> ParseHloText(
-      absl::string_view hlo_string) {
+  absl::StatusOr<std::unique_ptr<HloModule>> ParseHloText(absl::string_view hlo_string) {
     return ParseAndReturnVerifiedModule(hlo_string, GetModuleConfigForTest());
   }
 };
@@ -163,7 +167,7 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllScatterBug) {
   *eb.mutable_debug_options() = GetDebugOptionsForTest();
 
   const auto hlo_string = R"(
-HloModule module, is_scheduled=true
+HloModule module
 
 while_cond {
   param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
@@ -195,7 +199,6 @@ ENTRY entry {
 )";
   TF_ASSERT_OK_AND_ASSIGN(auto module, ParseHloText(hlo_string));
 
-  module->mutable_config().set_debug_options(GetDebugOptionsForTest());
   module->mutable_config().set_replica_count(2);
   auto exe = client.Compile({module->ToProto()}, copts).value();
 
@@ -205,11 +208,11 @@ ENTRY entry {
 
   auto [bufferA0, literalA0] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev0);
   auto [bufferB0, literalB0] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev0);
-  auto [bufferC0, literalC0] = CreateDeviceBufferR0(client, pred_shape, false, *dev0);
+  auto [bufferC0, literalC0] = CreateDeviceBufferR0(client, false, *dev0);
 
   auto [bufferA1, literalA1] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev1);
   auto [bufferB1, literalB1] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev1);
-  auto [bufferC1, literalC1] = CreateDeviceBufferR0(client, pred_shape, false, *dev1);
+  auto [bufferC1, literalC1] = CreateDeviceBufferR0(client, false, *dev1);
 
   std::vector<std::vector<PjRtBuffer *>> args = {
       {bufferA0.get(), bufferB0.get(), bufferC0.get()},

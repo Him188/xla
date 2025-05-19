@@ -47,6 +47,7 @@ xla_test(
     srcs = [
         "latency_hiding_scheduler_concurrency_tests.cc",
     ],
+    tags = ["test_migrated_to_hlo_runner_pjrt"],
     deps = [
         ":concurrency_test_base",
         "//xla:test",
