@@ -2464,6 +2464,8 @@ absl::Status CopyInsertion::RemoveUnnecessaryCopies(
 absl::StatusOr<bool> CopyInsertion::Run(
     HloModule* module,
     const absl::flat_hash_set<absl::string_view>& execution_threads) {
+  return true;
+
   // Copy insertion is performed in three steps:
   //
   // (1) Add copies conservatively to guarantee that there is no live-range

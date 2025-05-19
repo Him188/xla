@@ -102,10 +102,62 @@ tsl::StatusOr<std::shared_ptr<Literal>> buffer_to_literal(PjRtBuffer &buffer);
 
 tsl::StatusOr<std::shared_ptr<Literal>> buffer_to_literal(const std::unique_ptr<PjRtBuffer> &buffer);
 
-auto SetLiteralValue(Literal &dest, absl::Span<const float> src, int64_t src_row_start) -> void;
+template<typename NativeT>
+void SetLiteralValue(Literal &dest, const absl::Span<const NativeT> src, const int64_t src_row_start) {
+  const xla::Shape &shape = dest.shape();
+  const int64_t rows_per_part = shape.dimensions(0);
+  const int64_t cols = shape.dimensions(1);
 
-std::pair<std::unique_ptr<PjRtBuffer>, Literal> CreateDeviceBuffer(PjRtClient &client, const Shape shape, const float value, const PjRtDevice &device);
+  for (int64_t i = 0; i < rows_per_part; ++i) {
+    for (int64_t j = 0; j < cols; ++j) {
+      dest.Set<NativeT>({i, j}, src[(src_row_start + i) * cols + j]);
+    }
+  }
+}
 
+template<typename NativeT>
+inline std::pair<std::unique_ptr<PjRtBuffer>, Literal> CreateDeviceBufferR2(PjRtClient &client, const Shape shape, const NativeT value, const PjRtDevice &device) {
+  Literal literal(shape);
+  std::vector<NativeT> host;
+  host.resize(shape.dimensions(0) * shape.dimensions(1), value);
+  SetLiteralValue<NativeT>(literal, host, 0);
+
+  std::pair<std::unique_ptr<PjRtBuffer>, Literal> pair = std::make_pair(nullptr, std::move(literal));
+
+  auto buffer = client.BufferFromHostLiteral(pair.second, device.default_memory_space().value()).value();
+  pair.first = std::move(buffer);
+  return pair;
+}
+
+template<typename NativeT>
+inline std::pair<std::unique_ptr<PjRtBuffer>, Literal> CreateDeviceBufferR1(PjRtClient &client, const Shape shape, const NativeT value, const PjRtDevice &device) {
+  std::vector<NativeT> host;
+  host.resize(shape.dimensions(0), value);
+  Literal literal = LiteralUtil::CreateR1<NativeT>(host);
+
+  std::pair<std::unique_ptr<PjRtBuffer>, Literal> pair = std::make_pair(nullptr, std::move(literal));
+
+  auto buffer = client.BufferFromHostLiteral(pair.second, device.default_memory_space().value()).value();
+  pair.first = std::move(buffer);
+  return pair;
+}
+
+template<typename NativeT>
+inline std::pair<std::unique_ptr<PjRtBuffer>, Literal> CreateDeviceBufferR0(PjRtClient &client, const Shape shape, const NativeT value, const PjRtDevice &device) {
+  Literal literal = LiteralUtil::CreateR0<NativeT>(value);
+
+  std::pair<std::unique_ptr<PjRtBuffer>, Literal> pair = std::make_pair(nullptr, std::move(literal));
+
+  auto buffer = client.BufferFromHostLiteral(pair.second, device.default_memory_space().value()).value();
+  pair.first = std::move(buffer);
+  return pair;
+}
+
+template<typename NativeT>
+Literal Create2DLiteralOfConst(const Shape &shape, NativeT value);
+
+template<typename NativeT>
+Literal Create1DLiteralOfConst(const Shape &shape, NativeT value);
 } // namespace xla::xla_test_util
 
 #endif // TEST_UTIL_H

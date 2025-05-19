@@ -1,8 +1,10 @@
 #include "test_util.h"
 
+#include "xla/backends/gpu/runtime/copy_thunk.h"
 #include "xla/backends/gpu/runtime/gemm_thunk.h"
 #include "xla/backends/gpu/runtime/kernel_thunk.h"
 #include "xla/backends/gpu/runtime/nccl_all_reduce_thunk.h"
+#include "xla/backends/gpu/runtime/nccl_collective_permute_thunk.h"
 #include "xla/backends/gpu/runtime/wait_for_streams_thunk.h"
 #include "xla/hlo/builder/xla_builder.h"
 #include "xla/stream_executor/gpu/gpu_command_buffer.h"
@@ -36,7 +38,7 @@ void xla_test_util::EnableLogs() {
   // setenv("TF_CPP_MAX_VLOG_LEVEL", "10", 1);
   setenv("TF_CPP_VMODULE",
          "xla_service=2,xla_compilation_cache=1,gpu_compiler=3,command_buffer_thunk=3,async_wrapper.cc=3,xla/backends/gpu/collectives/"
-         "nccl_communicator.cc=10,collective_pipeliner=10",
+         "nccl_communicator.cc=10,collective_pipeliner=10,copy_insertion=100",
          1);
 }
 
@@ -144,10 +146,28 @@ void xla_test_util::print_gpu_thunk_sequence(se::StreamExecutor *stream_executor
       std::cout << ", RHS: " << gemm_thunk->rhs_buffer();
       std::cout << ", output: " << gemm_thunk->output_buffer();
       std::cout << std::endl;
-    } else if (auto *nccl_async_start_thunk = dynamic_cast<const gpu::NcclAllReduceStartThunk *>(thunk)) {
-      std::cout << ", source: " << nccl_async_start_thunk->buffers()[0].source_buffer;
-      std::cout << ", dest: " << nccl_async_start_thunk->buffers()[0].destination_buffer;
-      std::cout << std::endl;
+    } else if (auto *nccl_all_reduce_start = dynamic_cast<const gpu::NcclAllReduceReduceScatterThunkBase *>(thunk)) {
+      for (const auto &buffer : nccl_all_reduce_start->buffers()) {
+        std::cout << ", " << buffer.source_buffer << " -> " << buffer.destination_buffer;
+        std::cout << std::endl;
+      }
+    } else if (auto *nccl_collective_permute_start = dynamic_cast<const gpu::NcclCollectivePermuteStartThunk *>(thunk)) {
+      if (nccl_collective_permute_start->async_events()) {
+        std::cout << ", async";
+      } else {
+        std::cout << ", sync";
+      }
+      for (const auto &buffer : nccl_collective_permute_start->buffers()) {
+        std::cout << ", " << buffer.source_memory_space << ":" << buffer.source_buffer << " -> " << buffer.destination_memory_space << ":"
+                  << buffer.destination_buffer;
+        std::cout << std::endl;
+      }
+      // for (const auto & [id, pair] : nccl_collective_permute_start->p2pconfig().id_to_source_target) {
+      //   const auto [source, target] = pair;
+      //   std::cout << ", " << source;
+      //   std::cout << ", dest: " << nccl_collective_permute_start->buffers()[0].destination_buffer;
+      //   std::cout << std::endl;
+      // }
     } else if (auto *kernel_thunk = dynamic_cast<const gpu::KernelThunk *>(thunk)) {
       for (int i = 0; i < kernel_thunk->arguments().size(); ++i) {
         const auto &argument = kernel_thunk->arguments()[i];
@@ -160,6 +180,9 @@ void xla_test_util::print_gpu_thunk_sequence(se::StreamExecutor *stream_executor
         }
         std::cout << argument;
       }
+      std::cout << std::endl;
+    } else if (auto *copy_thunk = dynamic_cast<const gpu::CopyThunk *>(thunk)) {
+      std::cout << ", " << copy_thunk->source() << " -> " << copy_thunk->destination();
       std::cout << std::endl;
     } else {
       std::cout << std::endl;
@@ -233,28 +256,47 @@ tsl::StatusOr<std::shared_ptr<Literal>> buffer_to_literal(const std::unique_ptr<
   }
   return InvalidArgument("Buffer is null");
 }
-void SetLiteralValue(Literal &dest, const absl::Span<const float> src, const int64_t src_row_start) {
-  const xla::Shape &shape = dest.shape();
-  const int64_t rows_per_part = shape.dimensions(0);
-  const int64_t cols = shape.dimensions(1);
+// template<typename NativeT>
+// void SetLiteralValue(Literal &dest, const absl::Span<const NativeT> src, const int64_t src_row_start) {
+//   const xla::Shape &shape = dest.shape();
+//   const int64_t rows_per_part = shape.dimensions(0);
+//   const int64_t cols = shape.dimensions(1);
+//
+//   for (int64_t i = 0; i < rows_per_part; ++i) {
+//     for (int64_t j = 0; j < cols; ++j) {
+//       dest.Set<NativeT>({i, j}, src[(src_row_start + i) * cols + j]);
+//     }
+//   }
+// }
+// template<typename NativeT>
+// inline std::pair<std::unique_ptr<PjRtBuffer>, Literal> CreateDeviceBuffer(PjRtClient &client, const Shape shape, const NativeT value, const PjRtDevice
+// &device) {
+//   Literal literal(shape);
+//   std::vector<NativeT> host;
+//   host.resize(shape.dimensions(0) * shape.dimensions(1), value);
+//   SetLiteralValue(literal, host, 0);
+//
+//   std::pair<std::unique_ptr<PjRtBuffer>, Literal> pair = std::make_pair(nullptr, std::move(literal));
+//
+//   auto buffer = client.BufferFromHostLiteral(pair.second, device.default_memory_space().value()).value();
+//   pair.first = std::move(buffer);
+//   return pair;
+// }
 
-  for (int64_t i = 0; i < rows_per_part; ++i) {
-    for (int64_t j = 0; j < cols; ++j) {
-      dest.Set<float>({i, j}, src[(src_row_start + i) * cols + j]);
-    }
-  }
-}
-std::pair<std::unique_ptr<PjRtBuffer>, Literal> CreateDeviceBuffer(PjRtClient &client, const Shape shape, const float value, const PjRtDevice &device) {
+template <typename NativeT> Literal Create2DLiteralOfConst(const Shape &shape, const NativeT value) {
   Literal literal(shape);
-  std::vector<float> host;
+  std::vector<NativeT> host;
   host.resize(shape.dimensions(0) * shape.dimensions(1), value);
   SetLiteralValue(literal, host, 0);
+  return literal;
+}
 
-  std::pair<std::unique_ptr<PjRtBuffer>, Literal> pair = std::make_pair(nullptr, std::move(literal));
-
-  auto buffer = client.BufferFromHostLiteral(pair.second, device.default_memory_space().value()).value();
-  pair.first = std::move(buffer);
-  return pair;
+template <typename NativeT> Literal Create1DLiteralOfConst(const Shape &shape, const NativeT value) {
+  Literal literal(shape);
+  std::vector<NativeT> host;
+  host.resize(shape.dimensions(0), value);
+  SetLiteralValue(literal, host, 0);
+  return literal;
 }
 
 } // namespace xla_test_util

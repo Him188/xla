@@ -2051,7 +2051,7 @@ HloScheduleGraph::HloScheduleGraph(
     // by the async-done operation is not scheduled in between the start and the
     // done instruction as that buffer is in flux when the start happens.
     // Add an edge between this instruction and the start in this case.
-    if (async_tracker->IsSupportedAsyncDone(*instr)) {
+    if (false && async_tracker->IsSupportedAsyncDone(*instr)) {
       const HloInstruction* async_start = instr->operand(0);
       if (alias_analysis != nullptr) {
         for (const HloBuffer* buffer :

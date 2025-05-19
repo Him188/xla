@@ -39,6 +39,9 @@ cc_library(
         "test_util.cc",
         "test_util.h",
     ],
+    visibility = [
+        "//visibility:public",
+    ],
     deps = [
         "//xla:test",
         "//xla/backends/gpu/runtime:command_buffer_thunk",
@@ -159,6 +162,7 @@ xla_test(
         "test_util",
         "//xla:test",
         "//xla/hlo/testlib:test",
+        #        "//xla/hlo/testlib:verified_hlo_module",
         "//xla/tools/hlo_opt:gpu_opt",
         #        "//xla/service/gpu:gpu_compiler",  # CUDA compiler
         "//xla/tsl/lib/core:status_test_util",
