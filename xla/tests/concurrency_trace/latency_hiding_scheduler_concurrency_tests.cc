@@ -1,13 +1,34 @@
 #include "xla/backends/gpu/runtime/concurrency_trace.h"
 #include "xla/hlo/builder/lib/arithmetic.h"
 #include "xla/hlo/builder/xla_builder.h"
-#include "xla/tests/tg/test_util.h"
+#include "xla/literal.h"
+#include "xla/literal_util.h"
+#include "xla/pjrt/gpu/se_gpu_pjrt_client.h"
+#include "xla/pjrt/pjrt_client.h"
+#include "xla/pjrt/plugin/xla_gpu/xla_gpu_client_options.h"
+#include "xla/tests/concurrency_trace/concurrency_test_base.h"
+#include "xla/tests/test_macros.h"
 #include "xla/tsl/lib/core/status_test_util.h"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
 namespace xla {
+
+template <typename NativeT>
+std::pair<std::unique_ptr<PjRtBuffer>, Literal> CreateDeviceBufferR1(PjRtClient &client, const Shape &shape, NativeT value, PjRtDevice &device) {
+  std::vector<NativeT> host(shape.dimensions(0), value);
+  Literal literal = LiteralUtil::CreateR1<NativeT>(host);
+  auto buffer = client.BufferFromHostLiteral(literal, device.default_memory_space().value()).value();
+  return {std::move(buffer), std::move(literal)};
+}
+
+template <typename NativeT>
+std::pair<std::unique_ptr<PjRtBuffer>, Literal> CreateDeviceBufferR0(PjRtClient &client, const Shape & /*shape*/, NativeT value, PjRtDevice &device) {
+  Literal literal = LiteralUtil::CreateR0<NativeT>(value);
+  auto buffer = client.BufferFromHostLiteral(literal, device.default_memory_space().value()).value();
+  return {std::move(buffer), std::move(literal)};
+}
 
 // Builds and returns the HLO module.
 std::unique_ptr<HloModule> BuildModule() {
@@ -96,113 +117,125 @@ std::unique_ptr<HloModule> BuildModule() {
   return module;
 }
 
-TEST(LatencyHidingSchedulerConcurrencyTests, AllScatterBug) {
+class LatencyHidingSchedulerConcurrencyTests : public ConcurrencyTestBase {
+protected:
+  DebugOptions GetDebugOptionsForTest() const override {
+    DebugOptions dbg = ConcurrencyTestBase::GetDebugOptionsForTest();
+    dbg.set_xla_gpu_enable_latency_hiding_scheduler(true);
+    dbg.set_xla_gpu_dump_llvmir(true);
+    dbg.set_xla_dump_hlo_as_html(true);
+    dbg.set_xla_gpu_enable_pipelined_collectives(true);
+    dbg.set_xla_gpu_enable_pipelined_all_reduce(true);
+    dbg.set_xla_gpu_all_reduce_combine_threshold_bytes(999999999999);
+    dbg.set_xla_gpu_copy_insertion_use_region_analysis(true);
+    dbg.clear_xla_gpu_enable_command_buffer();
+    dbg.add_xla_gpu_enable_command_buffer(DebugOptions_CommandBufferCmdType_INVALID);
+    return dbg;
+  }
+
+  absl::StatusOr<std::unique_ptr<HloModule>> ParseHloText(
+      absl::string_view hlo_string) {
+    return ParseAndReturnVerifiedModule(hlo_string, GetModuleConfigForTest());
+  }
+};
+
+XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllScatterBug) {
   setenv("NCCL_DEBUG", "WARN", 1);
 
-  std::string dump_dir = ::testing::TempDir() + "/xla_dump";
-  std::filesystem::create_directory(dump_dir);
-  xla_test_util::SetXlaDumpFlags(dump_dir);
-  // xla_test_util::EnableLogs();
+  // ----------------- build HLO -------------------------------------------- //
+  XlaBuilder builder("add_allreduce_2gpu");
 
-  auto round = [&](const int round_number) {
-    using namespace xla_test_util;
+  const Shape mat_shape = ShapeUtil::MakeShape(BF16, {8});
+  const Shape pred_shape = ShapeUtil::MakeShape(PRED, {});
 
-    // ----------------- build HLO ------------------------------------------ //
-    XlaBuilder builder("add_allreduce_2gpu");
+  // ---------------- PJRT client / compilation ---------------------------- //
+  GpuClientOptions opts;
+  auto client_uptr = xla::GetStreamExecutorGpuClient(opts).value();
+  auto &client = *client_uptr;
 
-    const Shape mat_shape = ShapeUtil::MakeShape(BF16, {8});
-    const Shape pred_shape = ShapeUtil::MakeShape(PRED, {});
+  ASSERT_GE(client.addressable_devices().size(), 2) << "Need at least two visible CUDA devices.";
 
-    // ---------------- PJRT client / compilation -------------------------- //
-    GpuClientOptions opts;
-    auto client_uptr = xla::GetStreamExecutorGpuClient(opts).value();
-    auto &client = *client_uptr;
+  CompileOptions copts;
+  auto &eb = copts.executable_build_options;
+  eb.set_num_replicas(2);
+  eb.set_num_partitions(1);
+  eb.set_device_assignment(client.GetDefaultDeviceAssignment(2, 1).value());
+  *eb.mutable_debug_options() = GetDebugOptionsForTest();
 
-    ASSERT_GE(client.addressable_devices().size(), 2) << "Need at least two visible CUDA devices.";
+  const auto hlo_string = R"(
+HloModule module, is_scheduled=true
 
-    CompileOptions copts;
-    auto &eb = copts.executable_build_options;
-    eb.set_num_replicas(2);
-    eb.set_num_partitions(1);
+while_cond {
+  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
+  ROOT gte = pred[] get-tuple-element(param), index=2
+}
 
-    auto da = client.GetDefaultDeviceAssignment(2, 1).value();
-    eb.set_device_assignment(da);
+while_body {
+  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
+  gte0 = bf16[8]{0} get-tuple-element(param), index=0
+  gte1 = pred[] get-tuple-element(param), index=2
+  bitcast = bf16[8]{0} bitcast(gte0)
+  collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1},{1,0}}
+  add0 = bf16[8]{0} add(collective-permute.1, bitcast)
+  negate = bf16[8]{0} negate(add0)
+  collective-permute.2 = bf16[8]{0} collective-permute(collective-permute.1), source_target_pairs={{1,0},{0,1}}
+  ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte1)
+}
 
-    auto *dbg = eb.mutable_debug_options();
-    dbg->set_xla_gpu_enable_latency_hiding_scheduler(true);
-    dbg->set_xla_gpu_dump_llvmir(true);
-    dbg->set_xla_dump_hlo_as_html(true);
-    dbg->set_xla_gpu_enable_pipelined_collectives(true);
-    dbg->set_xla_gpu_enable_pipelined_all_reduce(true);
-    // dbg->set_xla_gpu_experimental_parallel_collective_overlap_limit(0);
-    dbg->set_xla_gpu_all_reduce_combine_threshold_bytes(999999999999);
-    // dbg->set_xla_gpu_enable_highest_priority_async_stream(true);
-    // dbg->set_xla_gpu_async_dot(true);
+ENTRY entry {
+  p0 = bf16[8]{0} parameter(0)
+  p1 = bf16[8]{0} parameter(1)
+  p2 = pred[] parameter(2)
+  tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
+  while = (bf16[8]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
+  gte0 = bf16[8]{0} get-tuple-element(while), index=0
+  gte1 = bf16[8]{0} get-tuple-element(while), index=1
+  ROOT add = bf16[8]{0} add(gte0, gte1)
+}
+)";
+  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseHloText(hlo_string));
 
-    dbg->set_xla_gpu_copy_insertion_use_region_analysis(true);
+  module->mutable_config().set_debug_options(GetDebugOptionsForTest());
+  module->mutable_config().set_replica_count(2);
+  auto exe = client.Compile({module->ToProto()}, copts).value();
 
-    dbg->clear_xla_gpu_enable_command_buffer();
-    dbg->add_xla_gpu_enable_command_buffer(DebugOptions_CommandBufferCmdType_INVALID);
+  // ---------------- host data -------------------------------------------- //
+  PjRtDevice *dev0 = client.addressable_devices()[0];
+  PjRtDevice *dev1 = client.addressable_devices()[1];
 
-    // dbg->set_xla_gpu_all_reduce_combine_threshold_bytes(0);
-    // dbg->set_xla_gpu_enable_nccl_user_buffers(true);
+  auto [bufferA0, literalA0] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev0);
+  auto [bufferB0, literalB0] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev0);
+  auto [bufferC0, literalC0] = CreateDeviceBufferR0(client, pred_shape, false, *dev0);
 
-    const auto module = BuildModule();
-    auto exe = client.Compile({module->ToProto()}, copts).value();
+  auto [bufferA1, literalA1] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev1);
+  auto [bufferB1, literalB1] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev1);
+  auto [bufferC1, literalC1] = CreateDeviceBufferR0(client, pred_shape, false, *dev1);
 
-    // ---------------- host data ------------------------------------------ //
-    PjRtDevice *dev0 = client.addressable_devices()[0];
-    PjRtDevice *dev1 = client.addressable_devices()[1];
-    ASSERT_TRUE(dev0 != nullptr);
-    ASSERT_TRUE(dev1 != nullptr);
-
-    auto [bufferA0, literalA0] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev0);
-    auto [bufferB0, literalB0] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev0);
-    auto [bufferC0, literalC0] = CreateDeviceBufferR0(client, pred_shape, false, *dev0);
-
-    auto [bufferA1, literalA1] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev1);
-    auto [bufferB1, literalB1] = CreateDeviceBufferR1(client, mat_shape, static_cast<bfloat16>(1.0f), *dev1);
-    auto [bufferC1, literalC1] = CreateDeviceBufferR0(client, pred_shape, false, *dev1);
-
-    std::vector<std::vector<PjRtBuffer *>> args = {
-        {bufferA0.get(), bufferB0.get(), bufferC0.get()}, // replica 0
-        {bufferA1.get(), bufferB1.get(), bufferC1.get()}  // replica 1
-    };
-
-    // ---------------- execute & verify ----------------------------------- //
-    gpu::ConcurrencyTracer tracer;
-    ExecuteOptions exec_opts;
-    exec_opts.gpu_concurrency_tracer = &tracer;
-    exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
-
-    if (round_number == 0) {
-      print_gpu_thunk_info(exe.get());
-      tracer.PrintTraces(std::cout);
-    }
-
-    auto races = tracer.DetectDataRaces();
-
-    std::cout << "Round " << round_number << ": " << "races=" << races.size() << std::endl;
-    if (!races.empty()) {
-      tracer.PrintDataRaces(std::cout);
-    }
-
-    ASSERT_TRUE(false);
-    auto outs = exe->Execute(args, exec_opts).value();
-
-    ASSERT_EQ(outs.size(), 2);
-    for (int p = 0; p < 2; ++p) {
-      ASSERT_EQ(outs[p].size(), 1);
-      auto lit = outs[p][0]->ToLiteralSync().value();
-      float v = lit->DecomposeTuple()[0].Get<float>({0});
-      EXPECT_NEAR(v, 4000.0f, 1e-6); // (1+2)+(3+4) = 10, *2 = 20
-    }
-
-    // PrintIrDumps(dump_dir, {IRDumpKind::kHTML});
+  std::vector<std::vector<PjRtBuffer *>> args = {
+      {bufferA0.get(), bufferB0.get(), bufferC0.get()},
+      {bufferA1.get(), bufferB1.get(), bufferC1.get()},
   };
 
-  for (int i = 0; i < 1; ++i) {
-    round(i);
+  // ---------------- execute & verify ------------------------------------ //
+  gpu::ConcurrencyTracer tracer;
+  ExecuteOptions exec_opts;
+  exec_opts.gpu_concurrency_tracer = &tracer;
+  exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
+
+  auto outs = exe->Execute(args, exec_opts).value();
+
+  ASSERT_EQ(outs.size(), 2);
+  for (int p = 0; p < 2; ++p) {
+    ASSERT_EQ(outs[p].size(), 1);
+    auto lit = outs[p][0]->ToLiteralSync().value();
+    float v = lit->DecomposeTuple()[0].Get<float>({0});
+    EXPECT_NEAR(v, 4000.0f, 1e-6);
+  }
+
+  auto races = tracer.DetectDataRaces();
+  std::cout << "races=" << races.size() << std::endl;
+  if (!races.empty()) {
+    tracer.PrintDataRaces(std::cout);
   }
 }
 } // namespace xla

@@ -31,12 +31,24 @@ xla_tests_package_groups()
 
 generate_backend_suites()
 
+cc_library(
+    name = "concurrency_test_base",
+    testonly = True,
+    srcs = ["concurrency_test_base.cc"],
+    hdrs = ["concurrency_test_base.h"],
+    deps = [
+        "//xla/tests:hlo_pjrt_interpreter_reference_mixin",
+        "//xla/tests:hlo_pjrt_test_base",
+    ],
+)
+
 xla_test(
     name = "latency_hiding_scheduler_concurrency_tests",
     srcs = [
         "latency_hiding_scheduler_concurrency_tests.cc",
     ],
     deps = [
+        ":concurrency_test_base",
         "//xla:test",
         "//xla/hlo/testlib:test",
         "//xla/tests/tg:test_util",
