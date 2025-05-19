@@ -102,6 +102,18 @@ std::unique_ptr<PjRtBuffer> xla_test_util::CreateDeviceBuffer(PjRtClient &client
   return std::move(buffer_or.value());
 }
 
+inline auto demangle(const char *m) -> std::string {
+#ifdef __clang__ || __GNUC__
+#include <cxxabi.h>
+#include <memory>
+  int status = 0;
+  const std::unique_ptr<char, void (*)(void *)> p{abi::__cxa_demangle(m, nullptr, nullptr, &status), std::free};
+  return std::string(status == 0 && p ? p.get() : m);
+#else
+  return std::string(m);
+#endif
+}
+
 void xla_test_util::print_gpu_thunk_sequence(se::StreamExecutor *stream_executor, const gpu::ThunkSequence &thunk_sequence, int &idx, int depth) {
   for (const std::unique_ptr<gpu::Thunk> &thunk_ptr : thunk_sequence) {
     const gpu::Thunk *thunk = thunk_ptr.get();
@@ -115,7 +127,9 @@ void xla_test_util::print_gpu_thunk_sequence(se::StreamExecutor *stream_executor
       return std::cout;
     };
 
-    start_line() << "Thunk " << idx++ << ": Kind=" << kind << ", launches on " << stream_id;
+    const auto &ti = typeid(*thunk);
+
+    start_line() << "Thunk#" << idx++ << " " << demangle(ti.name()) << ", launches on " << stream_id;
 
     if (auto *command_buffer_thunk = const_cast<gpu::CommandBufferThunk *>(dynamic_cast<const gpu::CommandBufferThunk *>(thunk))) {
       std::cout << command_buffer_thunk->ToString(0);
