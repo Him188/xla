@@ -53,6 +53,7 @@ cc_library(
         "//xla/backends/gpu/runtime:copy_thunk",
         "//xla/backends/gpu/runtime:nccl_collective_thunk",
         "//xla/backends/gpu/runtime:nccl_all_reduce_thunk",
+        "//xla/backends/gpu/runtime:nccl_collective_permute_thunk",
         "//xla/backends/gpu/runtime:kernel_thunk",
         "//xla/stream_executor/cuda:cuda_event",
         #        "//xla/stream_executor/cuda:cuda_stream",

@@ -7,6 +7,7 @@
 #include "gemm_thunk.h"
 #include "kernel_thunk.h"
 #include "nccl_all_reduce_thunk.h"
+#include "nccl_collective_permute_thunk.h"
 #include "xla/stream_executor/cuda/cuda_event.h"
 
 namespace xla::gpu {
@@ -33,6 +34,47 @@ constexpr bool ENABLE_LOGS = false;
 
 ConcurrencyTracer::ConcurrencyTracer() = default;
 ConcurrencyTracer::~ConcurrencyTracer() = default;
+void ConcurrencyTracer::RecordAsyncBufferAccesses(
+    const absl::Span<const NcclCollectiveThunk::Buffer> buffers,
+    const stream_executor::Event* const event,
+    const Thunk::ExecuteParams& params, const stream_executor::Stream* stream,
+    const int device_ordinal, SourceInfo source,
+    const AsyncStreamKind async_stream_kind) {
+  const auto completion_event_id =
+      static_cast<void*>(AssertCuda(event).GetHandle());
+
+  const auto& async_stream = *params.collective_params->async_streams.at(
+      static_cast<size_t>(async_stream_kind));
+
+  // Async
+  for (const auto& buf : buffers) {
+    if (buf.source_buffer != buf.destination_buffer) {
+      AddTrace<AsyncBufferRead>(
+          stream->platform_specific_handle().stream,
+          async_stream.platform_specific_handle().stream, completion_event_id,
+          Buffer{device_ordinal, buf.source_buffer}, source);
+    } else {
+      // Buffer aliased, we only record a write.
+    }
+
+    AddTrace<AsyncBufferWrite>(
+        stream->platform_specific_handle().stream,
+        async_stream.platform_specific_handle().stream, completion_event_id,
+        Buffer{device_ordinal, buf.destination_buffer}, source);
+  }
+}
+void ConcurrencyTracer::RecordSyncBufferAccesses(
+    const absl::Span<const NcclCollectiveThunk::Buffer> buffers,
+    const stream_executor::Stream* stream, const int device_ordinal,
+    SourceInfo source) {
+  for (const auto& buf : buffers) {
+    AddTrace<BufferRead>(stream->platform_specific_handle().stream,
+                         Buffer{device_ordinal, buf.source_buffer}, source);
+    AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
+                          Buffer{device_ordinal, buf.destination_buffer},
+                          source);
+  }
+}
 void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
                                       const Thunk::ExecuteParams& params) {
 #define THUNK_CASE(type)                             \
@@ -83,7 +125,7 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
 
     /* -------------------------- NCCL collective ⇩ ---------------------------
      */
-  } else if (THUNK_CASE(gpu::NcclAllReduceStartThunk)) {
+  } else if (THUNK_CASE(gpu::NcclAllReduceReduceScatterThunkBase)) {
     /*  The start thunk issues the NCCL call on an *async* stream:
         – all input buffers are READ;
         – all destination buffers are WRITTEN but are **not ready**
@@ -94,40 +136,24 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
     if (const auto async_events = t->async_events()) {
       if (const auto event =
               async_events->GetEvent(params.stream->parent()).value()) {
-        const auto completion_event_id =
-            static_cast<void*>(AssertCuda(event).GetHandle());
-
-        const auto& async_stream = *params.collective_params->async_streams.at(
-            static_cast<size_t>(t->GetAsyncStreamKind()));
-
-        // Async
-        for (const auto& buf : t->buffers()) {
-          if (buf.source_buffer != buf.destination_buffer) {
-            AddTrace<AsyncBufferRead>(
-                stream->platform_specific_handle().stream,
-                async_stream.platform_specific_handle().stream,
-                completion_event_id, Buffer{device_ordinal, buf.source_buffer},
-                source);
-          } else {
-            // Buffer aliased, we only record a write.
-          }
-
-          AddTrace<AsyncBufferWrite>(
-              stream->platform_specific_handle().stream,
-              async_stream.platform_specific_handle().stream,
-              completion_event_id,
-              Buffer{device_ordinal, buf.destination_buffer}, source);
-        }
+        RecordAsyncBufferAccesses(t->buffers(), event, params, stream,
+                                  device_ordinal, source,
+                                  t->GetAsyncStreamKind());
       }
     } else {
       // Sync
-      for (const auto& buf : t->buffers()) {
-        AddTrace<BufferRead>(stream->platform_specific_handle().stream,
-                             Buffer{device_ordinal, buf.source_buffer}, source);
-        AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
-                              Buffer{device_ordinal, buf.destination_buffer},
-                              source);
+      RecordSyncBufferAccesses(t->buffers(), stream, device_ordinal, source);
+    }
+  } else if (THUNK_CASE(gpu::NcclCollectivePermuteStartThunk)) {
+    if (const auto async_events = t->async_events()) {
+      if (const auto event =
+              async_events->GetEvent(params.stream->parent()).value()) {
+        RecordAsyncBufferAccesses(t->buffers(), event, params, stream,
+                                  device_ordinal, source,
+                                  t->GetAsyncStreamKind());
       }
+    } else {
+      RecordSyncBufferAccesses(t->buffers(), stream, device_ordinal, source);
     }
   } else if (THUNK_CASE(gpu::NcclCollectiveDoneThunk)) {
     /*  NcclCollectiveDoneThunk executes a `stream->WaitFor(event)` that

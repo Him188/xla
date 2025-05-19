@@ -1,6 +1,7 @@
 #ifndef XLA_BACKENDS_GPU_RUNTIME_TRACE_H_
 #define XLA_BACKENDS_GPU_RUNTIME_TRACE_H_
 
+#include "nccl_all_reduce_thunk.h"
 #include "thunk.h"
 
 namespace xla::gpu {
@@ -20,7 +21,6 @@ class ConcurrencyTracer {
  public:
   explicit ConcurrencyTracer();
   ~ConcurrencyTracer();
-
   using EventId = const void*;
   using StreamId = const void*;
 
@@ -195,6 +195,15 @@ class ConcurrencyTracer {
   using EdgeList = absl::flat_hash_map<size_t, absl::flat_hash_set<size_t>>;
   EdgeList BuildHappensBeforeGraph() const;
   static void PrintDot(const EdgeList& graph, std::ostream& out);
+
+  void RecordAsyncBufferAccesses(
+      absl::Span<const NcclCollectiveThunk::Buffer> buffers,
+      const stream_executor::Event* event,
+      const Thunk::ExecuteParams& params, const stream_executor::Stream* stream, int device_ordinal, SourceInfo source, AsyncStreamKind async_stream_kind);
+
+  void RecordSyncBufferAccesses(absl::Span<const NcclCollectiveThunk::Buffer> buffers,
+                     const stream_executor::Stream* stream, int device_ordinal,
+                     SourceInfo source);
 };
 
 }  // namespace xla::gpu

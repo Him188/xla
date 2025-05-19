@@ -137,14 +137,6 @@ ENTRY entry {
   exec_opts.gpu_concurrency_tracer = &tracer;
   exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
 
-  // Print compiled thunks
-  xla_test_util::print_gpu_thunk_info(exe.get());
-  auto races = tracer.DetectDataRaces();
-  std::cout << "races=" << races.size() << std::endl;
-  if (!races.empty()) {
-    tracer.PrintDataRaces(std::cout);
-  }
-
   // Execute
   TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe,
                                              {
@@ -152,6 +144,15 @@ ENTRY entry {
                                                  {mat, mat, pred},
                                              },
                                              exec_opts));
+
+  // Print compiled thunks
+  xla_test_util::print_gpu_thunk_info(exe.get());
+  auto races = tracer.DetectDataRaces();
+  std::cout << "races=" << races.size() << std::endl;
+  if (!races.empty()) {
+    tracer.PrintDataRaces(std::cout);
+  }
+  tracer.PrintTraces(std::cout);
 
   // Check
   ASSERT_EQ(outs.size(), 2);
