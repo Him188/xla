@@ -25,6 +25,7 @@ protected:
     // dbg.set_xla_dump_hlo_as_html(true);
     dbg.set_xla_gpu_enable_pipelined_collectives(true);
     dbg.set_xla_gpu_enable_pipelined_all_reduce(true);
+    dbg.set_xla_latency_hiding_scheduler_synthetic_remove_control_deps(true);
     // dbg.set_xla_gpu_all_reduce_combine_threshold_bytes(999999999999);
     dbg.set_xla_gpu_copy_insertion_use_region_analysis(true);
     dbg.clear_xla_gpu_enable_command_buffer();

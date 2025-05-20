@@ -150,6 +150,7 @@ struct SchedulerConfig {
   int64_t max_hops_to_closest_selective_overlap = 0;
   int64_t rerun = 0;
   int64_t parallel_collective_overlap_limit = 1;
+  bool enable_synthetic_bug_remove_control_deps = false;
 };
 
 // Class used estimate latency between instructions and cost of HLOs.
@@ -673,6 +674,11 @@ class HloGraphNode {
 // of HLO instructions.
 class HloScheduleGraph {
  public:
+  struct SyntheticBugOptions {
+    bool missing_collective_control_edges = false;
+    SyntheticBugOptions() = default;
+  };
+
   // Instructions in the list passed to the constructor shouldn't be
   // altered/deleted during the existence of the HloScheduleGraph.
   // Nullptr is not a valid value for 'post_order_instructions' and
@@ -680,7 +686,8 @@ class HloScheduleGraph {
   HloScheduleGraph(const std::vector<HloInstruction*>* post_order_instructions,
                    HloAliasAnalysis* alias_analysis,
                    const LatencyEstimator* latency_estimator,
-                   const AsyncTracker* async_tracker);
+                   const AsyncTracker* async_tracker,
+                   const SyntheticBugOptions synthetic_bug_options);
 
   std::string ToString(const AsyncTracker* async_tracker = nullptr) const;
 
@@ -1021,7 +1028,7 @@ class DefaultSchedulerCore : public SchedulerCore {
                     MemoryPressureTracker* memory_pressure_tracker,
                     const SchedulerConfig& config)
         : sched_graph(&instr_sequence->instructions(), alias_analysis,
-                      latency_estimator, async_tracker),
+                      latency_estimator, async_tracker, {config.enable_synthetic_bug_remove_control_deps}),
           latency_estimator(latency_estimator),
           async_tracker(async_tracker),
           memory_pressure_tracker(memory_pressure_tracker),

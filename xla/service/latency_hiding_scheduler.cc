@@ -1978,7 +1978,8 @@ bool HloScheduleGraph::IsPredecessorTransitively(
 HloScheduleGraph::HloScheduleGraph(
     const std::vector<HloInstruction*>* post_order_instructions,
     HloAliasAnalysis* alias_analysis, const LatencyEstimator* latency_estimator,
-    const AsyncTracker* async_tracker)
+    const AsyncTracker* async_tracker,
+    const SyntheticBugOptions synthetic_bug_options)
     : original_order_(post_order_instructions->begin(),
                       post_order_instructions->end()) {
   HloComputation* comp = (*post_order_instructions)[0]->parent();
@@ -2051,7 +2052,8 @@ HloScheduleGraph::HloScheduleGraph(
     // by the async-done operation is not scheduled in between the start and the
     // done instruction as that buffer is in flux when the start happens.
     // Add an edge between this instruction and the start in this case.
-    if (false && async_tracker->IsSupportedAsyncDone(*instr)) {
+    if (!synthetic_bug_options.missing_collective_control_edges &&
+        async_tracker->IsSupportedAsyncDone(*instr)) {
       const HloInstruction* async_start = instr->operand(0);
       if (alias_analysis != nullptr) {
         for (const HloBuffer* buffer :
@@ -2579,9 +2581,11 @@ LatencyHidingScheduler::LatencyHidingStatistics(
   std::unique_ptr<HloAliasAnalysis> hlo_alias_analysis =
       HloAliasAnalysis::Run(module).value();
   auto instructions_post_order = computation->MakeInstructionPostOrder();
+  HloScheduleGraph::SyntheticBugOptions synthetic_bug_options;
+  synthetic_bug_options.missing_collective_control_edges = module->config().debug_options().xla_latency_hiding_scheduler_synthetic_remove_control_deps();
   HloScheduleGraph schedule_graph(&instructions_post_order,
                                   /*alias_analysis=*/nullptr, latency_estimator,
-                                  async_tracker);
+                                  async_tracker, synthetic_bug_options);
   async_tracker->PostProcessScheduleGraph(&schedule_graph, latency_estimator);
   int64_t curr_pos = 0;
   for (const HloInstruction* instr :

@@ -578,6 +578,7 @@ absl::Status RunLatencyHidingSchedulerPasses(
   SchedulerConfig config = MakeGPUSchedulerConfig(
       memory_limit,
       options.xla_gpu_experimental_parallel_collective_overlap_limit());
+  config.enable_synthetic_bug_remove_control_deps = options.xla_latency_hiding_scheduler_synthetic_remove_control_deps();
 
   auto shape_size_in_bytes = [pointer_size](const Shape& shape) {
     return GetSizeOfShape(shape, pointer_size);
