@@ -58,7 +58,7 @@ protected:
   }
 
   absl::StatusOr<std::vector<std::vector<std::unique_ptr<PjRtBuffer>>>>
-  Execute(PjRtLoadedExecutable &executable, const absl::Span<const std::vector<Literal*>> args, const ExecuteOptions &exec_opts = {}) const {
+  Execute(PjRtLoadedExecutable &executable, const absl::Span<const absl::Span<const LiteralSlice>> args, const ExecuteOptions &exec_opts = {}) const {
     // Create device buffers for literals
     std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> buffers;
     buffers.reserve(args.size());
@@ -68,9 +68,8 @@ protected:
       auto &device_buffers = buffers.emplace_back();
       device_buffers.reserve(args[device_index].size());
 
-      for (const Literal *arg : args.at(device_index)) {
-        Literal literal = arg->Clone();
-        TF_ASSIGN_OR_RETURN(auto buffer, client().BufferFromHostLiteral(literal, mem_space));
+      for (const LiteralSlice &arg : args.at(device_index)) {
+        TF_ASSIGN_OR_RETURN(auto buffer, client().BufferFromHostLiteral(arg, mem_space));
         TF_RETURN_IF_ERROR(buffer->GetReadyFuture().Await());
         device_buffers.emplace_back(std::move(buffer));
       }
@@ -153,8 +152,8 @@ ENTRY entry {
   // Execute
   TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe,
                                              {
-                                                 {&mat, &mat, &pred},
-                                                 {&mat, &mat, &pred},
+                                                 {mat, mat, pred},
+                                                 {mat, mat, pred},
                                              },
                                              exec_opts));
 
