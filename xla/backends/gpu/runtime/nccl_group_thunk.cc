@@ -25,6 +25,7 @@ limitations under the License.
 #include "xla/backends/gpu/collectives/gpu_collectives.h"
 #include "xla/backends/gpu/runtime/nccl_collective_thunk.h"
 #include "xla/backends/gpu/runtime/thunk.h"
+#include "concurrency_trace.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/stream_executor/event.h"
 #include "xla/stream_executor/stream.h"
@@ -74,6 +75,9 @@ absl::Status NcclGroupThunk::ExecuteOnStream(
   TF_RETURN_IF_ERROR(async_stream->WaitFor(params.stream));
   TF_RETURN_IF_ERROR(collectives->GroupStart());
   for (const std::unique_ptr<Thunk>& thunk : thunks_) {
+    if (auto* tracer = params.concurrency_tracer) {
+      tracer->OnThunkLaunch(*thunk, params);
+    }
     TF_RETURN_IF_ERROR(thunk->ExecuteOnStream(params));
   }
   TF_RETURN_IF_ERROR(collectives->GroupEnd());

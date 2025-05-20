@@ -54,7 +54,7 @@ protected:
     TF_ASSIGN_OR_RETURN(const auto device_assignment, client().GetDefaultDeviceAssignment(mesh.num_replicas, mesh.num_partitions));
     eb.set_device_assignment(device_assignment);
     *eb.mutable_debug_options() = GetDebugOptionsForTest();
-    return client().Compile({module->ToProto()}, copts).value();
+    return client().Compile({module->ToProto()}, copts);
   }
 
   absl::StatusOr<std::vector<std::vector<std::unique_ptr<PjRtBuffer>>>>
@@ -68,8 +68,10 @@ protected:
       auto &device_buffers = buffers.emplace_back();
       device_buffers.reserve(args[device_index].size());
 
-      for (const LiteralSlice &arg : args[device_index]) {
-        TF_ASSIGN_OR_RETURN(auto buffer, client().BufferFromHostLiteral(arg, mem_space));
+      for (const LiteralSlice &arg : args.at(device_index)) {
+        Literal literal = arg.Clone();
+        TF_ASSIGN_OR_RETURN(auto buffer, client().BufferFromHostLiteral(literal, mem_space));
+        TF_RETURN_IF_ERROR(buffer->GetReadyFuture().Await());
         device_buffers.emplace_back(std::move(buffer));
       }
     }
@@ -85,12 +87,6 @@ protected:
         ptrs.push_back(buf.get());
     }
 
-    // Wait for the transfer
-    for (auto &device_buffers : buffers) {
-      for (const auto &buf : device_buffers) {
-        TF_RETURN_IF_ERROR(buf->GetReadyFuture().Await());
-      }
-    }
     TF_ASSIGN_OR_RETURN(auto res, executable.Execute(buffer_ptrs, exec_opts));
 
     // Wait for the transfer
@@ -109,41 +105,45 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllScatterBug) {
   ASSERT_GE(client().addressable_devices().size(), 2) << "Need at least two visible CUDA devices.";
 
   const auto hlo_string = R"(
-HloModule module
+HloModule module_with_counter
 
 while_cond {
-  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
-  ROOT gte = pred[] get-tuple-element(param), index=2
+  param = (bf16[8]{0}, bf16[8]{0}, s32[]) parameter(0)
+  iters = s32[] get-tuple-element(param), index=2
+  zero = s32[] constant(0)
+  ROOT keep_going = pred[] compare(iters, zero), direction=GT
 }
 
 while_body {
-  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
-  gte0 = bf16[8]{0} get-tuple-element(param), index=0
-  gte1 = pred[] get-tuple-element(param), index=2
-  bitcast = bf16[8]{0} bitcast(gte0)
-  collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1},{1,0}}
-  add0 = bf16[8]{0} add(collective-permute.1, bitcast)
-  negate = bf16[8]{0} negate(add0)
-  collective-permute.2 = bf16[8]{0} collective-permute(collective-permute.1), source_target_pairs={{1,0},{0,1}}
-  ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte1)
+  param = (bf16[8]{0}, bf16[8]{0}, s32[]) parameter(0)
+  A_in = bf16[8]{0} get-tuple-element(param), index=0
+  bitcast = bf16[8]{0} bitcast(A_in)
+  cp1 = bf16[8]{0} collective-permute(A_in), source_target_pairs={{0,1},{1,0}}
+  add0 = bf16[8]{0} add(cp1, bitcast)
+  neg = bf16[8]{0} negate(add0)
+  cp2 = bf16[8]{0} collective-permute(cp1), source_target_pairs={{1,0},{0,1}}
+  iters_in = s32[] get-tuple-element(param), index=2
+  one = s32[] constant(1)
+  iters_next = s32[] subtract(iters_in, one)
+  ROOT tuple = (bf16[8]{0}, bf16[8]{0}, s32[]) tuple(cp2, neg, iters_next)
 }
 
 ENTRY entry {
   p0 = bf16[8]{0} parameter(0)
   p1 = bf16[8]{0} parameter(1)
-  p2 = pred[] parameter(2)
-  tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
-  while = (bf16[8]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
-  gte0 = bf16[8]{0} get-tuple-element(while), index=0
-  gte1 = bf16[8]{0} get-tuple-element(while), index=1
-  ROOT add = bf16[8]{0} add(gte0, gte1)
+  p2 = s32[] parameter(2)
+  init_state = (bf16[8]{0}, bf16[8]{0}, s32[]) tuple(p0, p1, p2)
+  loop_state = (bf16[8]{0}, bf16[8]{0}, s32[]) while(init_state), condition=while_cond, body=while_body
+  A_final = bf16[8]{0} get-tuple-element(loop_state), index=0
+  B_final = bf16[8]{0} get-tuple-element(loop_state), index=1
+  ROOT out = bf16[8]{0} add(A_final, B_final)
 }
 )";
   TF_ASSERT_OK_AND_ASSIGN(auto exe, Compile(hlo_string, {2, 1}));
 
   // ---------------- host data -------------------------------------------- //
   Literal mat = LiteralUtil::CreateFull({8}, static_cast<bfloat16>(1.0f));
-  Literal pred = LiteralUtil::CreateR0<bool>(false);
+  Literal pred = LiteralUtil::CreateR0<int>(1);
 
   gpu::ConcurrencyTracer tracer;
   ExecuteOptions exec_opts;

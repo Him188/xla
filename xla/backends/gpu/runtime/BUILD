@@ -1028,6 +1028,7 @@ cc_library(
         "//xla:util",
         "//xla/backends/gpu/collectives:gpu_clique_key",
         "//xla/backends/gpu/collectives:gpu_collectives",
+        "//xla/backends/gpu/runtime:concurrency_tracer",
         "//xla/hlo/ir:hlo",
         "//xla/stream_executor:event",
         "//xla/stream_executor:stream",

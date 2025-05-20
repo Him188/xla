@@ -30,6 +30,7 @@ limitations under the License.
 #include "xla/backends/gpu/runtime/command_buffer_cmd.h"
 #include "xla/backends/gpu/runtime/sequential_thunk.h"
 #include "xla/backends/gpu/runtime/thunk.h"
+#include "concurrency_trace.h"
 #include "xla/service/buffer_assignment.h"
 #include "xla/service/gpu/buffer_allocations.h"
 #include "xla/stream_executor/command_buffer.h"
@@ -215,6 +216,16 @@ absl::Status CommandBufferThunk::ExecuteOnStream(const ExecuteParams& params) {
                "because we detected active profiling session";
     TF_RETURN_IF_ERROR(thunks_->ExecuteOnStream(params));
     return absl::OkStatus();
+  }
+
+  if (auto* tracer = params.concurrency_tracer) {
+    if (thunks_) {
+      for (const std::unique_ptr<Thunk>& thunk : thunks_->thunks()) {
+        tracer->OnThunkLaunch(*thunk, params);
+      }
+    } else {
+      tracer->OnThunkLaunch(*this, params);
+    }
   }
 
   se::StreamExecutor* executor = params.stream->parent();
