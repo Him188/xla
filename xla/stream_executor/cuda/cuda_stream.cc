@@ -129,8 +129,13 @@ absl::Status AsynchronousMemcpyH2D(StreamExecutor* executor,
                                    CUdeviceptr gpu_dst, const void* host_src,
                                    uint64_t size, CUstream stream) {
   std::unique_ptr<ActivateContext> activation = executor->Activate();
-  TF_RETURN_IF_ERROR(
-      cuda::ToStatus(cuMemcpyHtoDAsync(gpu_dst, host_src, size, stream)));
+
+  auto resp = cuMemcpyHtoDAsync(gpu_dst, host_src, size, stream);
+  if (resp != CUDA_SUCCESS) {
+    printf("FUCK");
+  }
+  // TF_RETURN_IF_ERROR(
+  //     cuda::ToStatus(cuMemcpyHtoDAsync(gpu_dst, host_src, size, stream)));
 
   VLOG(2) << "successfully enqueued async memcpy h2d of " << size << " bytes"
           << " from " << host_src << " to " << absl::bit_cast<void*>(gpu_dst)

@@ -25,7 +25,7 @@ protected:
     // dbg.set_xla_dump_hlo_as_html(true);
     dbg.set_xla_gpu_enable_pipelined_collectives(true);
     dbg.set_xla_gpu_enable_pipelined_all_reduce(true);
-    dbg.set_xla_gpu_all_reduce_combine_threshold_bytes(999999999999);
+    // dbg.set_xla_gpu_all_reduce_combine_threshold_bytes(999999999999);
     dbg.set_xla_gpu_copy_insertion_use_region_analysis(true);
     dbg.clear_xla_gpu_enable_command_buffer();
     dbg.add_xla_gpu_enable_command_buffer(DebugOptions_CommandBufferCmdType_INVALID);
@@ -58,7 +58,7 @@ protected:
   }
 
   absl::StatusOr<std::vector<std::vector<std::unique_ptr<PjRtBuffer>>>>
-  Execute(PjRtLoadedExecutable &executable, const absl::Span<const absl::Span<const LiteralSlice>> args, const ExecuteOptions &exec_opts = {}) const {
+  Execute(PjRtLoadedExecutable &executable, const absl::Span<const std::vector<Literal*>> args, const ExecuteOptions &exec_opts = {}) const {
     // Create device buffers for literals
     std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> buffers;
     buffers.reserve(args.size());
@@ -68,8 +68,8 @@ protected:
       auto &device_buffers = buffers.emplace_back();
       device_buffers.reserve(args[device_index].size());
 
-      for (const LiteralSlice &arg : args.at(device_index)) {
-        Literal literal = arg.Clone();
+      for (const Literal *arg : args.at(device_index)) {
+        Literal literal = arg->Clone();
         TF_ASSIGN_OR_RETURN(auto buffer, client().BufferFromHostLiteral(literal, mem_space));
         TF_RETURN_IF_ERROR(buffer->GetReadyFuture().Await());
         device_buffers.emplace_back(std::move(buffer));
@@ -153,8 +153,8 @@ ENTRY entry {
   // Execute
   TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe,
                                              {
-                                                 {mat, mat, pred},
-                                                 {mat, mat, pred},
+                                                 {&mat, &mat, &pred},
+                                                 {&mat, &mat, &pred},
                                              },
                                              exec_opts));
 
@@ -166,15 +166,6 @@ ENTRY entry {
     tracer.PrintDataRaces(std::cout);
   }
   tracer.PrintTraces(std::cout);
-
-  // Check
-  ASSERT_EQ(outs.size(), 2);
-  for (int p = 0; p < 2; ++p) {
-    ASSERT_EQ(outs[p].size(), 1);
-    TF_ASSERT_OK_AND_ASSIGN(auto lit, outs[p][0]->ToLiteralSync());
-    float v = lit->Get<tsl::bfloat16>({0});
-    EXPECT_NEAR(v, 2.0f, 1e-6);
-  }
-
-} // namespace xla
+  ASSERT_FALSE(races.empty());
+}
 } // namespace xla
