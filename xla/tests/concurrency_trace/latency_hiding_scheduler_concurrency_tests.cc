@@ -16,6 +16,7 @@
 #include "xla/pjrt/plugin/xla_gpu/xla_gpu_client_options.h"
 #include "xla/tests/concurrency_trace/concurrency_test_base.h"
 #include "xla/tests/test_macros.h"
+#include "xla/tests/test_utils.h"
 #include "xla/tests/tg/test_util.h"
 #include "xla/tsl/lib/core/status_test_util.h"
 
@@ -52,7 +53,10 @@ protected:
 
   absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> Compile(const std::string_view hlo_string, const DeviceMesh &mesh) {
     TF_ASSIGN_OR_RETURN(const auto module, ParseHloText(hlo_string));
+    return Compile(module.get(), mesh);
+  }
 
+  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> Compile(HloModule *module, const DeviceMesh &mesh) {
     module->mutable_config().set_replica_count(mesh.num_replicas);
 
     CompileOptions copts;
@@ -66,15 +70,13 @@ protected:
     return client().Compile({module->ToProto()}, copts);
   }
 
-  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> CompileStableHlo(
-      const std::string_view stablehlo_string, const DeviceMesh &mesh) {
+  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> CompileStableHlo(const std::string_view stablehlo_string, const DeviceMesh &mesh) {
     mlir::DialectRegistry registry;
     mlir::func::registerAllExtensions(registry);
     mlir::stablehlo::registerAllDialects(registry);
     mlir::MLIRContext context(registry);
     mlir::BaseScopedDiagnosticHandler diagnostic_handler(&context);
-    mlir::OwningOpRef<mlir::ModuleOp> module =
-        mlir::parseSourceString<mlir::ModuleOp>(stablehlo_string, &context);
+    mlir::OwningOpRef<mlir::ModuleOp> module = mlir::parseSourceString<mlir::ModuleOp>(stablehlo_string, &context);
     if (!module) {
       return diagnostic_handler.ConsumeStatus();
     }
@@ -84,9 +86,7 @@ protected:
     eb.set_num_replicas(mesh.num_replicas);
     eb.set_num_partitions(mesh.num_partitions);
 
-    TF_ASSIGN_OR_RETURN(const auto device_assignment,
-                        client().GetDefaultDeviceAssignment(mesh.num_replicas,
-                                                            mesh.num_partitions));
+    TF_ASSIGN_OR_RETURN(const auto device_assignment, client().GetDefaultDeviceAssignment(mesh.num_replicas, mesh.num_partitions));
     eb.set_device_assignment(device_assignment);
     *eb.mutable_debug_options() = GetDebugOptionsForTest();
     return client().Compile(module.get(), copts);
@@ -173,11 +173,11 @@ ENTRY entry {
   ROOT out = bf16[8]{0} add(A_final, B_final)
 }
 )";
-  TF_ASSERT_OK_AND_ASSIGN(auto exe, Compile(hlo_string, {2, 1}));
+  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseHloText(hlo_string));
+  TF_ASSERT_OK_AND_ASSIGN(auto exe, Compile(module.get(), {2, 1}));
 
-  // ---------------- host data -------------------------------------------- //
-  Literal mat = LiteralUtil::CreateFull({8}, static_cast<bfloat16>(1.0f));
-  Literal pred = LiteralUtil::CreateR0<int>(1);
+  // Generate fake arguments for the entry parameters.
+  TF_ASSERT_OK_AND_ASSIGN(auto fake_args, MakeFakeArguments(module.get()));
 
   gpu::ConcurrencyTracer tracer;
   ExecuteOptions exec_opts;
@@ -185,12 +185,7 @@ ENTRY entry {
   exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
 
   // Execute
-  TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe,
-                                             {
-                                                 {mat, mat, pred},
-                                                 {mat, mat, pred},
-                                             },
-                                             exec_opts));
+  TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, {fake_args, fake_args}, exec_opts));
 
   // Print compiled thunks
   xla_test_util::print_gpu_thunk_info(exe.get());
@@ -220,8 +215,7 @@ module @stablehlo_program {
   Literal rhs = LiteralUtil::CreateR1<float>({1, 1, 1, 1, 1, 1, 1, 1});
   TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, {{lhs, rhs}}));
 
-  TF_ASSERT_OK_AND_ASSIGN(std::shared_ptr<Literal> result,
-                          outs[0][0]->ToLiteralSync());
+  TF_ASSERT_OK_AND_ASSIGN(std::shared_ptr<Literal> result, outs[0][0]->ToLiteralSync());
   Literal expected = LiteralUtil::CreateR1<float>({2, 3, 4, 5, 6, 7, 8, 9});
   EXPECT_TRUE(LiteralTestUtil::Equal(expected, *result));
 }
