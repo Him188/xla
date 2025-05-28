@@ -51,6 +51,38 @@ protected:
     int num_partitions;
   };
 
+  void RunTest(const std::string_view hlo_string, bool expect_race) {
+    setenv("NCCL_DEBUG", "WARN", 1);
+
+    ASSERT_GE(client().addressable_devices().size(), 2) << "Need at least two visible CUDA devices.";
+
+    TF_ASSERT_OK_AND_ASSIGN(auto module, ParseHloText(hlo_string));
+    TF_ASSERT_OK_AND_ASSIGN(auto exe, Compile(module.get(), {2, 1}));
+
+    // Generate fake arguments for each device.
+    TF_ASSERT_OK_AND_ASSIGN(auto fake_args, MakeFakeArgumentsForDevices(module.get(), 2));
+    auto fake_arg_slices = MakeFakeArgumentSlices(fake_args);
+    std::vector<absl::Span<const LiteralSlice>> exec_args = MakeInnerSpan(fake_arg_slices);
+
+    gpu::ConcurrencyTracer tracer;
+    ExecuteOptions exec_opts;
+    exec_opts.gpu_concurrency_tracer = &tracer;
+    exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
+
+    // Execute
+    TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, exec_args, exec_opts));
+
+    // Print compiled thunks
+    xla_test_util::print_gpu_thunk_info(exe.get());
+    auto races = tracer.DetectDataRaces();
+    std::cout << "races=" << races.size() << std::endl;
+    if (!races.empty()) {
+      tracer.PrintDataRaces(std::cout);
+    }
+    tracer.PrintTraces(std::cout);
+    ASSERT_EQ(races.empty(), !expect_race);
+  }
+
   absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> Compile(const std::string_view hlo_string, const DeviceMesh &mesh) {
     TF_ASSIGN_OR_RETURN(const auto module, ParseHloText(hlo_string));
     return Compile(module.get(), mesh);
@@ -144,11 +176,7 @@ protected:
 };
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllScatterBug) {
-  setenv("NCCL_DEBUG", "WARN", 1);
-
-  ASSERT_GE(client().addressable_devices().size(), 2) << "Need at least two visible CUDA devices.";
-
-  const auto hlo_string = R"(
+  RunTest(R"(
 HloModule module_with_counter
 
 while_cond {
@@ -182,32 +210,8 @@ ENTRY entry {
   B_final = bf16[8]{0} get-tuple-element(loop_state), index=1
   ROOT out = bf16[8]{0} add(A_final, B_final)
 }
-)";
-  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseHloText(hlo_string));
-  TF_ASSERT_OK_AND_ASSIGN(auto exe, Compile(module.get(), {2, 1}));
-
-  // Generate fake arguments for each device.
-  TF_ASSERT_OK_AND_ASSIGN(auto fake_args, MakeFakeArgumentsForDevices(module.get(), 2));
-  auto fake_arg_slices = MakeFakeArgumentSlices(fake_args);
-  std::vector<absl::Span<const LiteralSlice>> exec_args = MakeInnerSpan(fake_arg_slices);
-
-  gpu::ConcurrencyTracer tracer;
-  ExecuteOptions exec_opts;
-  exec_opts.gpu_concurrency_tracer = &tracer;
-  exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
-
-  // Execute
-  TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, exec_args, exec_opts));
-
-  // Print compiled thunks
-  xla_test_util::print_gpu_thunk_info(exe.get());
-  auto races = tracer.DetectDataRaces();
-  std::cout << "races=" << races.size() << std::endl;
-  if (!races.empty()) {
-    tracer.PrintDataRaces(std::cout);
-  }
-  tracer.PrintTraces(std::cout);
-  ASSERT_FALSE(races.empty());
+)",
+          true);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RunStableHloModule) {
