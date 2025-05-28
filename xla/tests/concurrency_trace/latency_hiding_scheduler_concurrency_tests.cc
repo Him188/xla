@@ -1,8 +1,16 @@
+#include "mlir/Dialect/Func/Extensions/AllExtensions.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/Parser/Parser.h"
+#include "stablehlo/dialect/Register.h"
 #include "xla/backends/gpu/runtime/concurrency_trace.h"
 #include "xla/hlo/builder/lib/arithmetic.h"
 #include "xla/hlo/builder/xla_builder.h"
 #include "xla/literal.h"
 #include "xla/literal_util.h"
+#include "xla/mlir/utils/error_util.h"
 #include "xla/pjrt/gpu/se_gpu_pjrt_client.h"
 #include "xla/pjrt/pjrt_client.h"
 #include "xla/pjrt/plugin/xla_gpu/xla_gpu_client_options.h"
@@ -56,6 +64,32 @@ protected:
     eb.set_device_assignment(device_assignment);
     *eb.mutable_debug_options() = GetDebugOptionsForTest();
     return client().Compile({module->ToProto()}, copts);
+  }
+
+  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> CompileStableHlo(
+      const std::string_view stablehlo_string, const DeviceMesh &mesh) {
+    mlir::DialectRegistry registry;
+    mlir::func::registerAllExtensions(registry);
+    mlir::stablehlo::registerAllDialects(registry);
+    mlir::MLIRContext context(registry);
+    mlir::BaseScopedDiagnosticHandler diagnostic_handler(&context);
+    mlir::OwningOpRef<mlir::ModuleOp> module =
+        mlir::parseSourceString<mlir::ModuleOp>(stablehlo_string, &context);
+    if (!module) {
+      return diagnostic_handler.ConsumeStatus();
+    }
+
+    CompileOptions copts;
+    auto &eb = copts.executable_build_options;
+    eb.set_num_replicas(mesh.num_replicas);
+    eb.set_num_partitions(mesh.num_partitions);
+
+    TF_ASSIGN_OR_RETURN(const auto device_assignment,
+                        client().GetDefaultDeviceAssignment(mesh.num_replicas,
+                                                            mesh.num_partitions));
+    eb.set_device_assignment(device_assignment);
+    *eb.mutable_debug_options() = GetDebugOptionsForTest();
+    return client().Compile(module.get(), copts);
   }
 
   absl::StatusOr<std::vector<std::vector<std::unique_ptr<PjRtBuffer>>>>
@@ -167,5 +201,28 @@ ENTRY entry {
   }
   tracer.PrintTraces(std::cout);
   ASSERT_FALSE(races.empty());
+}
+
+XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RunStableHloModule) {
+  auto stablehlo = R"(
+module @stablehlo_program {
+  func.func @main(%a: tensor<8xf32>, %b: tensor<8xf32>) -> tensor<8xf32> {
+    %0 = stablehlo.add %a, %b : tensor<8xf32>
+    func.return %0 : tensor<8xf32>
+  }
+}
+)";
+
+  ASSERT_GE(client().addressable_devices().size(), 1);
+  TF_ASSERT_OK_AND_ASSIGN(auto exe, CompileStableHlo(stablehlo, {1, 1}));
+
+  Literal lhs = LiteralUtil::CreateR1<float>({1, 2, 3, 4, 5, 6, 7, 8});
+  Literal rhs = LiteralUtil::CreateR1<float>({1, 1, 1, 1, 1, 1, 1, 1});
+  TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, {{lhs, rhs}}));
+
+  TF_ASSERT_OK_AND_ASSIGN(std::shared_ptr<Literal> result,
+                          outs[0][0]->ToLiteralSync());
+  Literal expected = LiteralUtil::CreateR1<float>({2, 3, 4, 5, 6, 7, 8, 9});
+  EXPECT_TRUE(LiteralTestUtil::Equal(expected, *result));
 }
 } // namespace xla
