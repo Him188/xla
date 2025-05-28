@@ -105,6 +105,19 @@ absl::StatusOr<std::vector<Literal>> MakeFakeArguments(
     bool use_large_range = false, bool treat_gte_as_data_formatting = false,
     std::optional<int64_t> max_bits_of_precision = std::nullopt);
 
+// Generates fake arguments for a number of devices. Each device receives the
+// same type of arguments as returned by `MakeFakeArguments`.
+absl::StatusOr<std::vector<std::vector<Literal>>> MakeFakeArgumentsForDevices(
+    const HloModule* module, int device_count, bool pseudo_random = true,
+    bool use_large_range = false, bool treat_gte_as_data_formatting = false,
+    std::optional<int64_t> max_bits_of_precision = std::nullopt);
+
+// Converts fake arguments to a nested vector of LiteralSlices which can be used
+// to call Execute(). The returned slices reference the input Literals and must
+// not outlive them.
+std::vector<std::vector<LiteralSlice>> MakeFakeArgumentSlices(
+    const std::vector<std::vector<Literal>>& arguments);
+
 // Check that a given module satisfies various constraints before trying to
 // execute it.
 absl::Status VerifyHloModule(HloModule* const module, bool layout_sensitive,

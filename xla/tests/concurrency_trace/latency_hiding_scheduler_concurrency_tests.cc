@@ -131,6 +131,16 @@ protected:
     }
     return res;
   }
+
+  static std::vector<absl::Span<const LiteralSlice>> MakeInnerSpan(const std::vector<std::vector<LiteralSlice>> &fake_arg_slices) {
+    std::vector<absl::Span<const LiteralSlice>> exec_args;
+    exec_args.reserve(fake_arg_slices.size());
+
+    for (const auto &slices : fake_arg_slices) {
+      exec_args.emplace_back(slices);
+    }
+    return exec_args;
+  }
 };
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllScatterBug) {
@@ -176,8 +186,10 @@ ENTRY entry {
   TF_ASSERT_OK_AND_ASSIGN(auto module, ParseHloText(hlo_string));
   TF_ASSERT_OK_AND_ASSIGN(auto exe, Compile(module.get(), {2, 1}));
 
-  // Generate fake arguments for the entry parameters.
-  TF_ASSERT_OK_AND_ASSIGN(auto fake_args, MakeFakeArguments(module.get()));
+  // Generate fake arguments for each device.
+  TF_ASSERT_OK_AND_ASSIGN(auto fake_args, MakeFakeArgumentsForDevices(module.get(), 2));
+  auto fake_arg_slices = MakeFakeArgumentSlices(fake_args);
+  std::vector<absl::Span<const LiteralSlice>> exec_args = MakeInnerSpan(fake_arg_slices);
 
   gpu::ConcurrencyTracer tracer;
   ExecuteOptions exec_opts;
@@ -185,7 +197,7 @@ ENTRY entry {
   exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
 
   // Execute
-  TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, {fake_args, fake_args}, exec_opts));
+  TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, exec_args, exec_opts));
 
   // Print compiled thunks
   xla_test_util::print_gpu_thunk_info(exe.get());

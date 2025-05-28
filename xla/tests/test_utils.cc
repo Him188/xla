@@ -382,4 +382,34 @@ std::unique_ptr<HloDotInstruction> CreateCanonicalDot(const Shape& shape,
       shape, lhs, rhs, dot_dimension_numbers, precision_config);
 }
 
+absl::StatusOr<std::vector<std::vector<Literal>>> MakeFakeArgumentsForDevices(
+    const HloModule* module, int device_count, bool pseudo_random,
+    bool use_large_range, bool treat_gte_as_data_formatting,
+    std::optional<int64_t> max_bits_of_precision) {
+  std::vector<std::vector<Literal>> results;
+  results.reserve(device_count);
+  for (int i = 0; i < device_count; ++i) {
+    TF_ASSIGN_OR_RETURN(
+        auto args,
+        MakeFakeArguments(module, pseudo_random, use_large_range,
+                           treat_gte_as_data_formatting, max_bits_of_precision));
+    results.push_back(std::move(args));
+  }
+  return results;
+}
+
+std::vector<std::vector<LiteralSlice>> MakeFakeArgumentSlices(
+    const std::vector<std::vector<Literal>>& arguments) {
+  std::vector<std::vector<LiteralSlice>> result;
+  result.reserve(arguments.size());
+  for (const auto& device_args : arguments) {
+    auto& slices = result.emplace_back();
+    slices.reserve(device_args.size());
+    for (const auto& literal : device_args) {
+      slices.emplace_back(literal);
+    }
+  }
+  return result;
+}
+
 }  // namespace xla
