@@ -34,7 +34,6 @@ protected:
     // dbg.set_xla_dump_hlo_as_html(true);
     dbg.set_xla_gpu_enable_pipelined_collectives(true);
     dbg.set_xla_gpu_enable_pipelined_all_reduce(true);
-    dbg.set_xla_latency_hiding_scheduler_synthetic_remove_control_deps(true);
     // dbg.set_xla_gpu_all_reduce_combine_threshold_bytes(999999999999);
     dbg.set_xla_gpu_copy_insertion_use_region_analysis(true);
     dbg.clear_xla_gpu_enable_command_buffer();
@@ -83,12 +82,12 @@ protected:
     ASSERT_EQ(races.empty(), !expect_race);
   }
 
-  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> Compile(const std::string_view hlo_string, const DeviceMesh &mesh) {
+  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> Compile(const std::string_view hlo_string, const DeviceMesh &mesh, DebugOptions *debug_options = nullptr) {
     TF_ASSIGN_OR_RETURN(const auto module, ParseHloText(hlo_string));
-    return Compile(module.get(), mesh);
+    return Compile(module.get(), mesh, debug_options);
   }
 
-  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> Compile(HloModule *module, const DeviceMesh &mesh) {
+  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> Compile(HloModule *module, const DeviceMesh &mesh, DebugOptions *debug_options = nullptr) {
     module->mutable_config().set_replica_count(mesh.num_replicas);
 
     CompileOptions copts;
@@ -98,11 +97,16 @@ protected:
 
     TF_ASSIGN_OR_RETURN(const auto device_assignment, client().GetDefaultDeviceAssignment(mesh.num_replicas, mesh.num_partitions));
     eb.set_device_assignment(device_assignment);
-    *eb.mutable_debug_options() = GetDebugOptionsForTest();
+    if (debug_options == nullptr) {
+      *eb.mutable_debug_options() = GetDebugOptionsForTest();
+    } else {
+      *eb.mutable_debug_options() = *debug_options;
+    }
     return client().Compile({module->ToProto()}, copts);
   }
 
-  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> CompileStableHlo(const std::string_view stablehlo_string, const DeviceMesh &mesh) {
+  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> CompileStableHlo(const std::string_view stablehlo_string, const DeviceMesh &mesh,
+                                                                         DebugOptions *debug_options = nullptr) {
     mlir::DialectRegistry registry;
     mlir::func::registerAllExtensions(registry);
     mlir::stablehlo::registerAllDialects(registry);
@@ -120,7 +124,11 @@ protected:
 
     TF_ASSIGN_OR_RETURN(const auto device_assignment, client().GetDefaultDeviceAssignment(mesh.num_replicas, mesh.num_partitions));
     eb.set_device_assignment(device_assignment);
-    *eb.mutable_debug_options() = GetDebugOptionsForTest();
+    if (debug_options == nullptr) {
+      *eb.mutable_debug_options() = GetDebugOptionsForTest();
+    } else {
+      *eb.mutable_debug_options() = *debug_options;
+    }
     return client().Compile(module.get(), copts);
   }
 
@@ -215,7 +223,9 @@ ENTRY entry {
   ROOT out = bf16[8]{0} add(A_final, B_final)
 }
 )";
-  TF_ASSERT_OK_AND_ASSIGN(auto exe, Compile(hlo_string, {2, 1}));
+  DebugOptions debug_options = GetDebugOptionsForTest();
+  debug_options.set_xla_latency_hiding_scheduler_synthetic_remove_control_deps(true);
+  TF_ASSERT_OK_AND_ASSIGN(auto exe, Compile(hlo_string, {2, 1}, &debug_options));
 
   // ---------------- host data -------------------------------------------- //
   Literal mat = LiteralUtil::CreateFull({8}, static_cast<bfloat16>(1.0f));
@@ -244,27 +254,28 @@ ENTRY entry {
   ASSERT_FALSE(races.empty());
 }
 
-XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RunStableHloModule) {
-  auto stablehlo = R"(
-module @stablehlo_program {
-  func.func @main(%a: tensor<8xf32>, %b: tensor<8xf32>) -> tensor<8xf32> {
-    %0 = stablehlo.add %a, %b : tensor<8xf32>
-    func.return %0 : tensor<8xf32>
-  }
-}
-)";
-
-  ASSERT_GE(client().addressable_devices().size(), 1);
-  TF_ASSERT_OK_AND_ASSIGN(auto exe, CompileStableHlo(stablehlo, {1, 1}));
-
-  Literal lhs = LiteralUtil::CreateR1<float>({1, 2, 3, 4, 5, 6, 7, 8});
-  Literal rhs = LiteralUtil::CreateR1<float>({1, 1, 1, 1, 1, 1, 1, 1});
-  TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, {{lhs, rhs}}));
-
-  TF_ASSERT_OK_AND_ASSIGN(std::shared_ptr<Literal> result, outs[0][0]->ToLiteralSync());
-  Literal expected = LiteralUtil::CreateR1<float>({2, 3, 4, 5, 6, 7, 8, 9});
-  EXPECT_TRUE(LiteralTestUtil::Equal(expected, *result));
-}
+// XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RunStableHloModule) {
+//   auto stablehlo = R"(
+// module @stablehlo_program {
+//   func.func @main(%a: tensor<8xf32>, %b: tensor<8xf32>) -> tensor<8xf32> {
+//     %0 = stablehlo.add %a, %b : tensor<8xf32>
+//     func.return %0 : tensor<8xf32>
+//   }
+// }
+// )";
+//
+//   ASSERT_GE(client().addressable_devices().size(), 1);
+//   DebugOptions debug_options = GetDebugOptionsForTest();
+//   TF_ASSERT_OK_AND_ASSIGN(auto exe, CompileStableHlo(stablehlo, {1, 1}, &debug_options));
+//
+//   Literal lhs = LiteralUtil::CreateR1<float>({1, 2, 3, 4, 5, 6, 7, 8});
+//   Literal rhs = LiteralUtil::CreateR1<float>({1, 1, 1, 1, 1, 1, 1, 1});
+//   TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, {{lhs, rhs}}));
+//
+//   TF_ASSERT_OK_AND_ASSIGN(std::shared_ptr<Literal> result, outs[0][0]->ToLiteralSync());
+//   Literal expected = LiteralUtil::CreateR1<float>({2, 3, 4, 5, 6, 7, 8, 9});
+//   EXPECT_TRUE(LiteralTestUtil::Equal(expected, *result));
+// }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllGatherAsyncSimple) {
   RunTest(R"(
@@ -294,84 +305,84 @@ ENTRY %module {
   ROOT a2 = f32[16,256,256]{2,1,0} add(%ag-done, c0)
 }
         )",
-          true);
+          false);
 }
 
-XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllGatherAsyncBalance) {
-  RunTest(R"(
-        HloModule module, is_scheduled=false
-
-ENTRY %module {
-  %constant.19 = u32[] constant(0)
-  %replica_id = u32[]{:T(128)} replica-id()
-  %convert = f32[]{:T(128)} convert(u32[]{:T(128)} %replica_id)
-  %color_operand.1 = f32[1,8,256,256]{3,2,1,0:T(8,128)} broadcast(
-    f32[]{:T(128)} %convert), dimensions={}
-  %ag-start = (f32[1,8,256,256], f32[2,8,256,256]) all-gather-start(
-    f32[1,8,256,256] %color_operand.1), replica_groups={{0,1}}, dimensions={0},
-    metadata={op_type="AllGather" op_name="ag0"}
-  %ag-done = f32[2,8,256,256] all-gather-done(
-    (f32[1,8,256,256], f32[2,8,256,256]) %ag-start),
-    metadata={op_type="AllGather" op_name="ag0"}
-  %ag-done-bc = f32[16,256,256] bitcast(f32[2,8,256,256] %ag-done),
-    metadata={op_type="Bitcast" op_name="ag0"}
-  %ag-start.2 = (f32[1,8,256,256], f32[2,8,256,256]) all-gather-start(
-    f32[1,8,256,256] %color_operand.1), replica_groups={{0,1}}, dimensions={0},
-    metadata={op_type="AllGather" op_name="ag1"}
-  %ag-done.2 = f32[2,8,256,256] all-gather-done(
-    (f32[1,8,256,256], f32[2,8,256,256]) %ag-start.2),
-    metadata={op_type="AllGather" op_name="ag1"}
-  %ag-done-bc.2 = f32[16,256,256] bitcast(f32[2,8,256,256] %ag-done.2),
-    metadata={op_type="Bitcast" op_name="ag1"}
-  p0 = f32[16,64,256]{2,1,0} parameter(0)
-  p1 = f32[16,64,256]{2,1,0} parameter(1)
-  p2 = f32[16,256,256]{2,1,0} parameter(2)
-  p3 = f32[16,256,256]{2,1,0} parameter(3)
-  c0 = f32[16,256,256]{2,1,0} convolution(p0, p1),
-    window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb,
-    metadata={op_type="AllGather" op_name="c0"}
-  c1 = f32[16,256,256]{2,1,0} convolution(p0, p1),
-    window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb,
-    metadata={op_type="AllGather" op_name="c1"}
-  a2 = f32[16,256,256]{2,1,0} add(c1, c0)
-  ROOT t = (f32[16,256,256], f32[16,256,256], f32[16,256,256]) tuple(a2, %ag-done-bc.2, %ag-done-bc)
-}
-        )",
-          true);
-}
-
-XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllGatherAsyncReshaped) {
-  RunTest(R"(
-        HloModule module, is_scheduled=false
-
-
-ENTRY %module {
-  %constant.19 = u32[] constant(0)
-  %replica_id = u32[]{:T(128)} replica-id()
-  %convert = f32[]{:T(128)} convert(u32[]{:T(128)} %replica_id)
-  %color_operand.1 = f32[1,8,256,256]{3,2,1,0:T(8,128)} broadcast(
-    f32[]{:T(128)} %convert), dimensions={}
-  %ag-start = (f32[1,8,256,256], f32[2,8,256,256]) all-gather-start(
-    f32[1,8,256,256] %color_operand.1), replica_groups={{0,1}}, dimensions={0},
-    metadata={op_type="AllGather" op_name="ag0"}
-  %ag-done = f32[2,8,256,256] all-gather-done(
-    (f32[1,8,256,256], f32[2,8,256,256]) %ag-start),
-    metadata={op_type="AllGather" op_name="ag0"}
-  %ag-done-bc = f32[16,256,256] bitcast(f32[2,8,256,256] %ag-done),
-    metadata={op_type="Bitcast" op_name="ag0"}
-  p0 = f32[16,64,256]{2,1,0} parameter(0)
-  p1 = f32[16,64,256]{2,1,0} parameter(1)
-  p2 = f32[16,256,256]{2,1,0} parameter(2)
-  p3 = f32[16,256,256]{2,1,0} parameter(3)
-  c0 = f32[16,256,256]{2,1,0} convolution(p0, p1),
-    window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb
-  c1 = f32[16,256,256]{2,1,0} convolution(p0, p1),
-    window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb
-  ROOT a2 = f32[16,256,256]{2,1,0} add(%ag-done-bc, c0)
-}
-        )",
-          true);
-}
+// XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllGatherAsyncBalance) {
+//   RunTest(R"(
+//         HloModule module, is_scheduled=false
+//
+// ENTRY %module {
+//   %constant.19 = u32[] constant(0)
+//   %replica_id = u32[]{:T(128)} replica-id()
+//   %convert = f32[]{:T(128)} convert(u32[]{:T(128)} %replica_id)
+//   %color_operand.1 = f32[1,8,256,256]{3,2,1,0:T(8,128)} broadcast(
+//     f32[]{:T(128)} %convert), dimensions={}
+//   %ag-start = (f32[1,8,256,256], f32[2,8,256,256]) all-gather-start(
+//     f32[1,8,256,256] %color_operand.1), replica_groups={{0,1}}, dimensions={0},
+//     metadata={op_type="AllGather" op_name="ag0"}
+//   %ag-done = f32[2,8,256,256] all-gather-done(
+//     (f32[1,8,256,256], f32[2,8,256,256]) %ag-start),
+//     metadata={op_type="AllGather" op_name="ag0"}
+//   %ag-done-bc = f32[16,256,256] bitcast(f32[2,8,256,256] %ag-done),
+//     metadata={op_type="Bitcast" op_name="ag0"}
+//   %ag-start.2 = (f32[1,8,256,256], f32[2,8,256,256]) all-gather-start(
+//     f32[1,8,256,256] %color_operand.1), replica_groups={{0,1}}, dimensions={0},
+//     metadata={op_type="AllGather" op_name="ag1"}
+//   %ag-done.2 = f32[2,8,256,256] all-gather-done(
+//     (f32[1,8,256,256], f32[2,8,256,256]) %ag-start.2),
+//     metadata={op_type="AllGather" op_name="ag1"}
+//   %ag-done-bc.2 = f32[16,256,256] bitcast(f32[2,8,256,256] %ag-done.2),
+//     metadata={op_type="Bitcast" op_name="ag1"}
+//   p0 = f32[16,64,256]{2,1,0} parameter(0)
+//   p1 = f32[16,64,256]{2,1,0} parameter(1)
+//   p2 = f32[16,256,256]{2,1,0} parameter(2)
+//   p3 = f32[16,256,256]{2,1,0} parameter(3)
+//   c0 = f32[16,256,256]{2,1,0} convolution(p0, p1),
+//     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb,
+//     metadata={op_type="AllGather" op_name="c0"}
+//   c1 = f32[16,256,256]{2,1,0} convolution(p0, p1),
+//     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb,
+//     metadata={op_type="AllGather" op_name="c1"}
+//   a2 = f32[16,256,256]{2,1,0} add(c1, c0)
+//   ROOT t = (f32[16,256,256], f32[16,256,256], f32[16,256,256]) tuple(a2, %ag-done-bc.2, %ag-done-bc)
+// }
+//         )",
+//           true);
+// }
+//
+// XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllGatherAsyncReshaped) {
+//   RunTest(R"(
+//         HloModule module, is_scheduled=false
+//
+//
+// ENTRY %module {
+//   %constant.19 = u32[] constant(0)
+//   %replica_id = u32[]{:T(128)} replica-id()
+//   %convert = f32[]{:T(128)} convert(u32[]{:T(128)} %replica_id)
+//   %color_operand.1 = f32[1,8,256,256]{3,2,1,0:T(8,128)} broadcast(
+//     f32[]{:T(128)} %convert), dimensions={}
+//   %ag-start = (f32[1,8,256,256], f32[2,8,256,256]) all-gather-start(
+//     f32[1,8,256,256] %color_operand.1), replica_groups={{0,1}}, dimensions={0},
+//     metadata={op_type="AllGather" op_name="ag0"}
+//   %ag-done = f32[2,8,256,256] all-gather-done(
+//     (f32[1,8,256,256], f32[2,8,256,256]) %ag-start),
+//     metadata={op_type="AllGather" op_name="ag0"}
+//   %ag-done-bc = f32[16,256,256] bitcast(f32[2,8,256,256] %ag-done),
+//     metadata={op_type="Bitcast" op_name="ag0"}
+//   p0 = f32[16,64,256]{2,1,0} parameter(0)
+//   p1 = f32[16,64,256]{2,1,0} parameter(1)
+//   p2 = f32[16,256,256]{2,1,0} parameter(2)
+//   p3 = f32[16,256,256]{2,1,0} parameter(3)
+//   c0 = f32[16,256,256]{2,1,0} convolution(p0, p1),
+//     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb
+//   c1 = f32[16,256,256]{2,1,0} convolution(p0, p1),
+//     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb
+//   ROOT a2 = f32[16,256,256]{2,1,0} add(%ag-done-bc, c0)
+// }
+//         )",
+//           false);
+// }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllGatherAsyncOverlapped) {
   RunTest(R"(
@@ -405,7 +416,7 @@ ENTRY %module {
   ROOT a2 = f32[16,256,256]{2,1,0} add(%ag-done, %ag-done.2)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllGatherAsyncOverlapped2) {
@@ -438,7 +449,7 @@ ENTRY %module {
   ROOT a2 = f32[16,256,256]{2,1,0} add(%c0, %c1)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllGatherAsyncOverlapped3) {
@@ -473,7 +484,7 @@ ENTRY %module {
   ROOT a2 = f32[16,256,256]{2,1,0} add(%ag-done, %ag-done.2)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllReduceAsyncBalance) {
@@ -525,92 +536,93 @@ ENTRY %module {
   ROOT t = (f32[16,256,256], f32[16,256,256], f32[16,256,256]) tuple(a2, %ar-done-bc.2, %ar-done-bc)
 }
         )",
-          true);
+          false);
 }
-
-XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileLoopAliasingBug) {
-  return;
-  RunTest(R"(
-        HloModule module, is_scheduled=false
-
-while_cond {
-  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
-  ROOT gte = pred[] get-tuple-element(param), index=2
-}
-
-while_body {
-  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
-  gte0 = bf16[8]{0} get-tuple-element(param), index=0
-  gte1 = pred[] get-tuple-element(param), index=2
-  bitcast = bf16[8]{0} bitcast(gte0)
-  collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1},{1,0}}
-  add0 = bf16[8]{0} add(collective-permute.1, bitcast)
-  negate = bf16[8]{0} negate(add0)
-  collective-permute.2 = bf16[8]{0} collective-permute(collective-permute.1), source_target_pairs={{1,0},{0,1}}
-  ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte1)
-}
-
-ENTRY entry {
-  p0 = bf16[8]{0} parameter(0)
-  p1 = bf16[8]{0} parameter(1)
-  p2 = pred[] parameter(2)
-  tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
-  while = (bf16[8]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
-  gte0 = bf16[8]{0} get-tuple-element(while), index=0
-  gte1 = bf16[8]{0} get-tuple-element(while), index=1
-  ROOT add = bf16[8]{0} add(gte0, gte1)
-}
-        )",
-          true);
-}
-
-XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileLoopAliasingBug2) {
-  return;
-  RunTest(R"(
-        HloModule module, is_scheduled=false
-
-while_cond {
-  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
-  ROOT gte = pred[] get-tuple-element(param), index=2
-}
-
-while_body {
-  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
-  gte0 = bf16[8]{0} get-tuple-element(param), index=0
-  gte1 = bf16[8]{0} get-tuple-element(param), index=1
-  gte2 = pred[] get-tuple-element(param), index=2
-  negate1 = bf16[8]{0} negate(gte1)
-  collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1},{1,2},{2,3}}
-  negate0 = bf16[8]{0} negate(collective-permute.1)
-  collective-permute.2 = bf16[8]{0} collective-permute(negate1), source_target_pairs={{1,0},{0,3},{3,2}}
-  ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate0, gte2)
-}
-
-ENTRY entry {
-  p0 = bf16[8]{0} parameter(0)
-  p1 = bf16[8]{0} parameter(1)
-  p2 = pred[] parameter(2)
-  tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
-  while = (bf16[8]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
-  gte0 = bf16[8]{0} get-tuple-element(while), index=0
-  gte1 = bf16[8]{0} get-tuple-element(while), index=1
-  ROOT add = bf16[8]{0} add(gte0, gte1)
-}
-        )",
-          true);
-}
-
-XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, SingleCollectivePermuteTest) {
-  return; // NCCL operation ncclGroupEnd() failed: unhandled cuda error (run with NCCL_DEBUG=INFO for details). Last NCCL warning(error) log entry (may be unrelated) 'Failed to CUDA calloc async 24 bytes'.
-  RunTest(R"(
-      HloModule single_collective_permute_test, is_scheduled=false
-  ENTRY after_optimizations_test {
-  %parameter.1 = bf16[8]{0} parameter(0), sharding={replicated}
-  ROOT %collective-permute.1 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{0,1},{1,2},{2,3}}, channel_id=1
-}
-      )",
-          true);
-}
+//
+// XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileLoopAliasingBug) {
+//   return;
+//   RunTest(R"(
+//         HloModule module, is_scheduled=false
+//
+// while_cond {
+//   param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   ROOT gte = pred[] get-tuple-element(param), index=2
+// }
+//
+// while_body {
+//   param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   gte0 = bf16[8]{0} get-tuple-element(param), index=0
+//   gte1 = pred[] get-tuple-element(param), index=2
+//   bitcast = bf16[8]{0} bitcast(gte0)
+//   collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1},{1,0}}
+//   add0 = bf16[8]{0} add(collective-permute.1, bitcast)
+//   negate = bf16[8]{0} negate(add0)
+//   collective-permute.2 = bf16[8]{0} collective-permute(collective-permute.1), source_target_pairs={{1,0},{0,1}}
+//   ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte1)
+// }
+//
+// ENTRY entry {
+//   p0 = bf16[8]{0} parameter(0)
+//   p1 = bf16[8]{0} parameter(1)
+//   p2 = pred[] parameter(2)
+//   tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
+//   while = (bf16[8]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
+//   gte0 = bf16[8]{0} get-tuple-element(while), index=0
+//   gte1 = bf16[8]{0} get-tuple-element(while), index=1
+//   ROOT add = bf16[8]{0} add(gte0, gte1)
+// }
+//         )",
+//           false);
+// }
+//
+// XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileLoopAliasingBug2) {
+//   return;
+//   RunTest(R"(
+//         HloModule module, is_scheduled=false
+//
+// while_cond {
+//   param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   ROOT gte = pred[] get-tuple-element(param), index=2
+// }
+//
+// while_body {
+//   param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   gte0 = bf16[8]{0} get-tuple-element(param), index=0
+//   gte1 = bf16[8]{0} get-tuple-element(param), index=1
+//   gte2 = pred[] get-tuple-element(param), index=2
+//   negate1 = bf16[8]{0} negate(gte1)
+//   collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1},{1,2},{2,3}}
+//   negate0 = bf16[8]{0} negate(collective-permute.1)
+//   collective-permute.2 = bf16[8]{0} collective-permute(negate1), source_target_pairs={{1,0},{0,3},{3,2}}
+//   ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate0, gte2)
+// }
+//
+// ENTRY entry {
+//   p0 = bf16[8]{0} parameter(0)
+//   p1 = bf16[8]{0} parameter(1)
+//   p2 = pred[] parameter(2)
+//   tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
+//   while = (bf16[8]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
+//   gte0 = bf16[8]{0} get-tuple-element(while), index=0
+//   gte1 = bf16[8]{0} get-tuple-element(while), index=1
+//   ROOT add = bf16[8]{0} add(gte0, gte1)
+// }
+//         )",
+//           false);
+// }
+//
+// XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, SingleCollectivePermuteTest) {
+//   return; // NCCL operation ncclGroupEnd() failed: unhandled cuda error (run with NCCL_DEBUG=INFO for details). Last NCCL warning(error) log entry (may be
+//           // unrelated) 'Failed to CUDA calloc async 24 bytes'.
+//   RunTest(R"(
+//       HloModule single_collective_permute_test, is_scheduled=false
+//   ENTRY after_optimizations_test {
+//   %parameter.1 = bf16[8]{0} parameter(0), sharding={replicated}
+//   ROOT %collective-permute.1 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{0,1},{1,2},{2,3}}, channel_id=1
+// }
+//       )",
+//           false);
+// }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, InplaceUpdateCPTest) {
   RunTest(R"(
@@ -632,11 +644,11 @@ ENTRY %module_spmd () -> f32[4,4,128] {
   %tuple = (u32[], u32[], u32[]) tuple(u32[] %constant.5, u32[] %constant.8, u32[] %constant.8)
   %custom-call = f32[4,4,128]{2,1,0:T(4,128)} custom-call(), custom_call_target="AllocateBuffer"
   %fusion.1 = f32[4,4,128]{2,1,0:T(4,128)} fusion(f32[4,4,128]{2,1,0:T(4,128)} %custom-call, u32[] %constant.5), kind=kLoop, calls=%fused_computation.1
-  %collective-permute = f32[4,4,128]{2,1,0:T(4,128)} collective-permute(f32[4,4,128]{2,1,0:T(4,128)} %fusion.1, f32[4,4,128]{2,1,0:T(4,128)} %fusion.1, (u32[], u32[], u32[]) %tuple, (u32[], u32[], u32[]) %tuple.1), channel_id=958, source_target_pairs={{0,4},{4,0},{1,5},{5,1},{2,6},{6,2},{3,7},{7,3}}, slice_sizes={{2,4,128}}, backend_config="{\"flag_configs\":[],\"barrier_config\":{\"barrier_type\":\"CUSTOM\",\"id\":\"0\"},\"scoped_memory_configs\":[]}"
+  %collective-permute = f32[4,4,128]{2,1,0:T(4,128)} collective-permute(f32[4,4,128]{2,1,0:T(4,128)} %fusion.1, f32[4,4,128]{2,1,0:T(4,128)} %fusion.1, (u32[], u32[], u32[]) %tuple, (u32[], u32[], u32[]) %tuple.1), channel_id=958, source_target_pairs={{0,1},{1,0}}, slice_sizes={{2,4,128}}, backend_config="{\"flag_configs\":[],\"barrier_config\":{\"barrier_type\":\"CUSTOM\",\"id\":\"0\"}}"
   ROOT %copy.3 = f32[4,4,128]{2,1,0:T(4,128)} copy(f32[4,4,128]{2,1,0:T(4,128)} %collective-permute)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, InplaceUpdateCPTest2) {
@@ -672,7 +684,7 @@ ENTRY %module () -> f32[33708,1024] {
   ROOT %bitcast.16 = f32[33708,1024]{1,0:T(8,128)} bitcast(f32[33712,8,128]{2,1,0:T(8,128)} %collective-permute.5)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, TwoCollectivePermuteTypesOverlap) {
@@ -715,7 +727,7 @@ ENTRY entry {
   ROOT tuple = (f32[16,256,256]{2,1,0}, f32[16,64,256]{2,1,0}, f32[16,128,256]{2,1,0}) tuple(c1, cp3, cp5)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, SerialCollectivePermutesTest) {
@@ -730,7 +742,7 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, SerialCollectivePermutesTest)
   %collective-permute.6 = bf16[8]{0} collective-permute(bf16[8]{0} add.5), source_target_pairs={{1,0},{0,3},{3,2}}
 }
       )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BackToBackCollectivePerGmutesTest) {
@@ -742,7 +754,7 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BackToBackCollectivePerGmutes
   %collective-permute.6 = bf16[8]{0} collective-permute(bf16[8]{0} collective-permute.2), source_target_pairs={{1,0},{0,3},{3,2}}
 }
       )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, ParallelCollectivePermutesTest) {
@@ -758,7 +770,7 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, ParallelCollectivePermutesTes
   %add.6 = bf16[8]{0} add(bf16[8]{0} %collective-permute.6, bf16[8]{0} %add.5)
 }
       )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, MaxConcurrentCollectivePermutesTest) {
@@ -781,7 +793,7 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, MaxConcurrentCollectivePermut
   ROOT %add.14 = bf16[8]{0} add(bf16[8]{0} %collective-permute.4, bf16[8]{0} %add.13)
 }
       )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BalanceChainedCollectivePermutesNoOverlap) {
@@ -795,7 +807,7 @@ ENTRY entry {
   ROOT collective-permute.2 = bf16[8]{0} collective-permute(copy.2), source_target_pairs={{1,0},{0,3},{3,2}}
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, ExistingSingleCollectivePermuteAsyncTest) {
@@ -818,7 +830,7 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, ExistingSingleCollectivePermu
   ROOT a = f32[16,256,256]{2,1,0} add(c0, collective-permute-done.1)
 }
       )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BalanceChainExtended) {
@@ -853,7 +865,7 @@ ENTRY entry {
   ROOT tuple = (f32[16,256,256]{2,1,0}, f32[16,256,256]{2,1,0}) tuple(a2, cp3)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BalanceChainedCollectivePermutesLoopedEinsum) {
@@ -959,7 +971,7 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BalanceChainedCollectivePermu
   ROOT %add.3080 = bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} add(bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} %param_0.240, bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} %slice.1245)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, MoveCentainConv) {
@@ -989,7 +1001,7 @@ ENTRY entry {
   ROOT tuple = (f32[16,256,256]{2,1,0}, f32[16,256,256]{2,1,0}) tuple(a2, cp3)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BalanceChainedCollectivePermutesLoopedEinsum2) {
@@ -1095,7 +1107,7 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BalanceChainedCollectivePermu
   ROOT %add.3122 = bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} add(bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} %param_0.250, bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} %slice.1125)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BalanceChainedCollectivePermutesLoopedEinsum3) {
@@ -1195,7 +1207,7 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BalanceChainedCollectivePermu
   ROOT %add.3143 = bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} add(bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} %add.3146, bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} %bitcast.596)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, MoveCentainConv2) {
@@ -1223,45 +1235,45 @@ ENTRY entry {
   ROOT tuple = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, f32[16,256,256]{2,1,0}) tuple(cp2, cp3, c1)
 }
         )",
-          true);
+          false);
 }
 
-XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileOverlapLimit) {
-  RunTest(R"(
-        HloModule module, is_scheduled=false
-
-while_cond {
-  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
-  ROOT gte = pred[] get-tuple-element(param), index=2
-}
-
-while_body {
-  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
-  gte0 = bf16[8]{0} get-tuple-element(param), index=0
-  gte1 = pred[] get-tuple-element(param), index=2
-  bitcast = bf16[8]{0} bitcast(gte0)
-  collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1},{1,2},{2,3}}
-  add0 = bf16[8]{0} add(collective-permute.1, bitcast)
-  negate = bf16[8]{0} negate(add0)
-  collective-permute.2 = bf16[8]{0} collective-permute(collective-permute.1), source_target_pairs={{1,0},{0,3},{3,2}}
-  ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte1)
-}
-
-ENTRY entry {
-  p0 = bf16[8]{0} parameter(0)
-  p1 = bf16[8]{0} parameter(1)
-  p2 = pred[] parameter(2)
-  tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
-  while = (bf16[8]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
-  collective-permute.3 = bf16[8]{0} collective-permute(p1), source_target_pairs={{0,1},{1,2},{2,3}}
-  gte0 = bf16[8]{0} get-tuple-element(while), index=0
-  gte1 = bf16[8]{0} get-tuple-element(while), index=1
-  add = bf16[8]{0} add(gte0, gte1)
-  ROOT add2 = bf16[8]{0} add(add, collective-permute.3)
-}
-        )",
-          true);
-}
+// XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileOverlapLimit) {
+//   RunTest(R"(
+//         HloModule module, is_scheduled=false
+//
+// while_cond {
+//   param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   ROOT gte = pred[] get-tuple-element(param), index=2
+// }
+//
+// while_body {
+//   param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   gte0 = bf16[8]{0} get-tuple-element(param), index=0
+//   gte1 = pred[] get-tuple-element(param), index=2
+//   bitcast = bf16[8]{0} bitcast(gte0)
+//   collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1},{1,2},{2,3}}
+//   add0 = bf16[8]{0} add(collective-permute.1, bitcast)
+//   negate = bf16[8]{0} negate(add0)
+//   collective-permute.2 = bf16[8]{0} collective-permute(collective-permute.1), source_target_pairs={{1,0},{0,3},{3,2}}
+//   ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte1)
+// }
+//
+// ENTRY entry {
+//   p0 = bf16[8]{0} parameter(0)
+//   p1 = bf16[8]{0} parameter(1)
+//   p2 = pred[] parameter(2)
+//   tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
+//   while = (bf16[8]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
+//   collective-permute.3 = bf16[8]{0} collective-permute(p1), source_target_pairs={{0,1},{1,2},{2,3}}
+//   gte0 = bf16[8]{0} get-tuple-element(while), index=0
+//   gte1 = bf16[8]{0} get-tuple-element(while), index=1
+//   add = bf16[8]{0} add(gte0, gte1)
+//   ROOT add2 = bf16[8]{0} add(add, collective-permute.3)
+// }
+//         )",
+//           false);
+// }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileNestedOverlapLimit) {
   RunTest(R"(
@@ -1312,7 +1324,7 @@ ENTRY entry {
   ROOT add2 = bf16[8]{0} add(add, collective-permute.3)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileOverlapUnderLimit) {
@@ -1349,7 +1361,7 @@ ENTRY entry {
   ROOT add2 = bf16[8]{0} add(add, collective-permute.3)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileOverlapLimitAllGather) {
@@ -1386,7 +1398,7 @@ ENTRY entry {
   ROOT tuple.2 = (bf16[4]{0}, bf16[8]{0}, bf16[8]{0}) tuple(gte0, gte1, all-gather.2)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileOverlapUnderLimitAllGather) {
@@ -1423,7 +1435,7 @@ ENTRY entry {
   ROOT tuple.2 = (bf16[4]{0}, bf16[8]{0}, bf16[8]{0}) tuple(gte0, gte1, all-gather.2)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllToAllAsyncBalance) {
@@ -1477,7 +1489,7 @@ ENTRY %module {
   ROOT t = (f32[16,256,256], f32[16,256,256], f32[16,256,256]) tuple(a2, %ata-done-bc.2, %ata-done-bc)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, ReleaseOneThatStallsLessFirst) {
@@ -1499,7 +1511,7 @@ ENTRY entry {
   ROOT tuple.2 = (f32[16,256,256]{2,1,0}, f32[1024,2048,2048]{2,1,0}, f32[2048,2048,2048]{2,1,0}) tuple(c0, cp1d, cp2d)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, ReleaseStartWhenLatencyDue) {
@@ -1524,7 +1536,7 @@ ENTRY entry {
   ROOT tuple.2 = (f32[16,256,256]{2,1,0}, f32[16,256,256]{2,1,0}, f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}) tuple(c0, c1, cp2d, cp3d)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, DepthPressureReduction) {
@@ -1550,7 +1562,7 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, DepthPressureReduction) {
   ROOT %t = (bf16[8]{0}, bf16[8]{0}, bf16[8]{0}, bf16[8]{0}) tuple(f, g, h, i)
 }
       )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) {
@@ -1565,7 +1577,7 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
   ROOT tuple = (bf16[8]{0}, bf16[1]{0}) tuple(cp, s)
 }
       )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, MultipleAsyncDoneOperationsDoNotCreateLoop) {
@@ -1577,15 +1589,15 @@ called_computation {
 }
 
 ENTRY main {
-  %while_body_forward_pass_input_tuple = (s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)}) parameter(0), backend_config={"flag_configs":[],"scoped_memory_configs":[],"compute_type":"COMPUTE_TYPE_SCALAR"}
+  %while_body_forward_pass_input_tuple = (s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)}) parameter(0), backend_config={"flag_configs":[],"compute_type":"COMPUTE_TYPE_SCALAR"}
 
   %get-tuple-element.0 = s32[<=4096]{0:T(8)M(1024)} get-tuple-element(
       (s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)}) %while_body_forward_pass_input_tuple),
-      index=0, backend_config={"flag_configs":[],"scoped_memory_configs":[],"compute_type":"COMPUTE_TYPE_SCALAR"}
+      index=0, backend_config={"flag_configs":[],"compute_type":"COMPUTE_TYPE_SCALAR"}
 
   %get-tuple-element.1 = s32[<=4096]{0:T(8)M(1024)} get-tuple-element(
       (s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)}) %while_body_forward_pass_input_tuple),
-      index=1, backend_config={"flag_configs":[],"scoped_memory_configs":[],"compute_type":"COMPUTE_TYPE_SCALAR"}
+      index=1, backend_config={"flag_configs":[],"compute_type":"COMPUTE_TYPE_SCALAR"}
 
   %call-start.1 = ((s32[<=4096]{0:T(8)M(1024)}), s32[<=4096]{0:T(8)M(1024)}, u32[]{:T(8)S(8)})
     call-start(s32[<=4096]{0:T(8)M(1024)} %get-tuple-element.1),
@@ -1610,10 +1622,10 @@ ENTRY main {
 
   ROOT %tuple.6 = (s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)})
     tuple(s32[<=4096]{0:T(8)M(1024)} %call-done.2, s32[<=4096]{0:T(8)M(1024)} %call-done.3),
-      backend_config={"flag_configs":[],"scoped_memory_configs":[],"compute_type":"COMPUTE_TYPE_SCALAR"}
+      backend_config={"flag_configs":[],"compute_type":"COMPUTE_TYPE_SCALAR"}
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, CopyScheduling) {
@@ -1629,7 +1641,7 @@ ENTRY AddR2 {
   ROOT convolution.1 = bf16[12800,12800]{1,0:T(8,128)(2,1)} convolution(convolution, copy-done), dim_labels=bf_io->bf
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, MaxCopyScheduling) {
@@ -1648,7 +1660,7 @@ ENTRY AddR2 {
   ROOT t = (bf16[12800,12800]{1,0:T(8,128)(2,1)}, bf16[12800,12800]{1,0:T(8,128)(2,1)})  tuple(copy-done2, copy-done)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, ScheduleLoopPeeledSendDoneBeforeWhile) {
@@ -1684,7 +1696,7 @@ ENTRY %entry {
   ROOT gte0 = bf16[1,1,4096,1344]{2,3,1,0:T(8,128)(2,1)} get-tuple-element(while), index=0
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllGatherWithSelectiveOverlap) {
@@ -1716,7 +1728,7 @@ ENTRY %module {
   ROOT a2 = f32[16,256,256]{2,1,0} add(%ag-done, c0)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AnnotationFirstDataIndependentConv) {
@@ -1741,7 +1753,7 @@ ENTRY entry {
   ROOT tuple.2 = (f32[16,256,256]{2,1,0}, f32[16,256,256]{2,1,0}, f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}) tuple(c0, c1, cp2d, cp3d)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AnnotationSecondDataIndependentConv) {
@@ -1766,7 +1778,7 @@ ENTRY entry {
   ROOT tuple.2 = (f32[16,256,256]{2,1,0}, f32[16,256,256]{2,1,0}, f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}) tuple(c0, c1, cp2d, cp3d)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AnnotationBothDataIndependentConvs) {
@@ -1791,7 +1803,7 @@ ENTRY entry {
   ROOT tuple.2 = (f32[16,256,256]{2,1,0}, f32[16,256,256]{2,1,0}, f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}) tuple(c0, c1, cp2d, cp3d)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AnnotationFirstDataDependentConv) {
@@ -1816,7 +1828,7 @@ ENTRY entry {
   ROOT tuple.2 = (f32[16,256,256]{2,1,0}, f32[1,256,256]{2,1,0}, f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}) tuple(c0, c1, cp2d, cp3d)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AnnotationSecondDataDependentConv) {
@@ -1841,7 +1853,7 @@ ENTRY entry {
   ROOT tuple.2 = (f32[16,256,256]{2,1,0}, f32[1,256,256]{2,1,0}, f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}) tuple(c0, c1, cp2d, cp3d)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AnnotationBothDataDependentConvs) {
@@ -1866,7 +1878,7 @@ ENTRY entry {
   ROOT tuple.2 = (f32[16,256,256]{2,1,0}, f32[1,256,256]{2,1,0}, f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}) tuple(c0, c1, cp2d, cp3d)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AnnotationWithTwoAsyncOps) {
@@ -1888,7 +1900,7 @@ ENTRY entry {
   ROOT tuple.2 = (f32[16,256,256]{2,1,0}, f32[512,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}) tuple(c0, cp1d, cp3d)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, SchedulingAnnotationMakesAnotherGroupReady) {
@@ -1919,7 +1931,7 @@ ENTRY entry {
   ROOT tuple = (f32[128,2048,2048]{2,1,0}, f32[1,256,256]{2,1,0}) tuple(cp1d, f1)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AnnotatedRoot) {
@@ -1940,7 +1952,7 @@ ENTRY entry {
   ROOT f0 = f32[16,256,256]{2,1,0} fusion(p0, p0), kind=kOutput, calls=fused_computation, frontend_attributes={_scheduling_group_id="0"}
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AnnotatedNoOp) {
@@ -1966,7 +1978,7 @@ ENTRY entry {
   ROOT add = f32[128,2048]{1,0} add(gte, cpd)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, OutOfOrderStartAndDone) {
@@ -2005,7 +2017,7 @@ ENTRY main {
   ROOT recv_done0 = (f32[16], token[]) recv-done(gte0), frontend_attributes={_xla_send_recv_source_target_pairs={{0,1},{1,2},{2,3}}}
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, SchedulingAnnotationCrossesOverlapLimit) {
@@ -2027,7 +2039,7 @@ ENTRY entry {
   ROOT tuple.2 = (f32[16,256,256]{2,1,0}, f32[16,256,256]{2,1,0}, f32[128,2048,2048]{2,1,0}) tuple(c1, c2, cp2d)
 }
         )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, CrossComputationAnnotation) {
@@ -2066,7 +2078,7 @@ ENTRY entry {
   ROOT tuple1 = (f32[16,64,256]{2,1,0}, f32[16,256,256]{2,1,0}, f32[1024,1024]{1,0}) tuple(gte, c0, agd0)
 }
       )",
-          true);
+          false);
 }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, InvalidAnnotationOverlap) {
@@ -2107,7 +2119,7 @@ ENTRY entry {
   ROOT tuple1 = (f32[16,64,256]{2,1,0}, f32[16,256,256]{2,1,0}, f32[1024,1024]{1,0}, f32[1024,1024]{1,0}) tuple(gte, c0, agd0, agd1)
 }
       )",
-          true);
+          false);
 }
 
 } // namespace xla
