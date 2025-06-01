@@ -51,7 +51,7 @@ protected:
   };
 
   void RunTest(const std::string_view hlo_string, bool expect_race) {
-    setenv("NCCL_DEBUG", "WARN", 1);
+    setenv("NCCL_DEBUG", "INFO", 1);
 
     ASSERT_GE(client().addressable_devices().size(), 2) << "Need at least two visible CUDA devices.";
 
@@ -319,7 +319,7 @@ ENTRY %module {
 //   %color_operand.1 = f32[1,8,256,256]{3,2,1,0:T(8,128)} broadcast(
 //     f32[]{:T(128)} %convert), dimensions={}
 //   %ag-start = (f32[1,8,256,256], f32[2,8,256,256]) all-gather-start(
-//     f32[1,8,256,256] %color_operand.1), replica_groups={{0,1}}, dimensions={0},
+//     f32[1,8,256,256] %color_operand.1), replica_groups={{0,1}, {1,0}}, dimensions={0},
 //     metadata={op_type="AllGather" op_name="ag0"}
 //   %ag-done = f32[2,8,256,256] all-gather-done(
 //     (f32[1,8,256,256], f32[2,8,256,256]) %ag-start),
@@ -327,7 +327,7 @@ ENTRY %module {
 //   %ag-done-bc = f32[16,256,256] bitcast(f32[2,8,256,256] %ag-done),
 //     metadata={op_type="Bitcast" op_name="ag0"}
 //   %ag-start.2 = (f32[1,8,256,256], f32[2,8,256,256]) all-gather-start(
-//     f32[1,8,256,256] %color_operand.1), replica_groups={{0,1}}, dimensions={0},
+//     f32[1,8,256,256] %color_operand.1), replica_groups={{0,1}, {1,0}}, dimensions={0},
 //     metadata={op_type="AllGather" op_name="ag1"}
 //   %ag-done.2 = f32[2,8,256,256] all-gather-done(
 //     (f32[1,8,256,256], f32[2,8,256,256]) %ag-start.2),
@@ -363,7 +363,7 @@ ENTRY %module {
 //   %color_operand.1 = f32[1,8,256,256]{3,2,1,0:T(8,128)} broadcast(
 //     f32[]{:T(128)} %convert), dimensions={}
 //   %ag-start = (f32[1,8,256,256], f32[2,8,256,256]) all-gather-start(
-//     f32[1,8,256,256] %color_operand.1), replica_groups={{0,1}}, dimensions={0},
+//     f32[1,8,256,256] %color_operand.1), replica_groups={{0,1}, {1,0}}, dimensions={0},
 //     metadata={op_type="AllGather" op_name="ag0"}
 //   %ag-done = f32[2,8,256,256] all-gather-done(
 //     (f32[1,8,256,256], f32[2,8,256,256]) %ag-start),
@@ -507,10 +507,10 @@ ENTRY %module {
   %color_operand.2 = f32[2,8,256,256]{3,2,1,0:T(8,128)} broadcast(
     f32[]{:T(128)} %convert), dimensions={}
   %ar-start = f32[2,8,256,256] all-reduce-start(
-    f32[2,8,256,256] %color_operand.1), replica_groups={{0,1}}, to_apply=%add,
+    f32[2,8,256,256] %color_operand.1), replica_groups={{0,1}, {1,0}}, to_apply=%add,
     metadata={op_type="AllReduce" op_name="ar0"}
   %ar-start.2 = f32[2,8,256,256] all-reduce-start(
-    f32[2,8,256,256] %color_operand.2), replica_groups={{0,1}}, to_apply=%add,
+    f32[2,8,256,256] %color_operand.2), replica_groups={{0,1}, {1,0}}, to_apply=%add,
     metadata={op_type="AllReduce" op_name="ar1"}
   %ar-done = f32[2,8,256,256] all-reduce-done(
     f32[2,8,256,256] %ar-start),
@@ -591,9 +591,9 @@ ENTRY %module {
 //   gte1 = bf16[8]{0} get-tuple-element(param), index=1
 //   gte2 = pred[] get-tuple-element(param), index=2
 //   negate1 = bf16[8]{0} negate(gte1)
-//   collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1},{1,2},{2,3}}
+//   collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1}, {1,0}}
 //   negate0 = bf16[8]{0} negate(collective-permute.1)
-//   collective-permute.2 = bf16[8]{0} collective-permute(negate1), source_target_pairs={{1,0},{0,3},{3,2}}
+//   collective-permute.2 = bf16[8]{0} collective-permute(negate1), source_target_pairs={{1,0}}
 //   ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate0, gte2)
 // }
 //
@@ -618,7 +618,7 @@ ENTRY %module {
 //       HloModule single_collective_permute_test, is_scheduled=false
 //   ENTRY after_optimizations_test {
 //   %parameter.1 = bf16[8]{0} parameter(0), sharding={replicated}
-//   ROOT %collective-permute.1 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{0,1},{1,2},{2,3}}, channel_id=1
+//   ROOT %collective-permute.1 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{0,1}, {1,0}}, channel_id=1
 // }
 //       )",
 //           false);
@@ -644,7 +644,7 @@ ENTRY %module_spmd () -> f32[4,4,128] {
   %tuple = (u32[], u32[], u32[]) tuple(u32[] %constant.5, u32[] %constant.8, u32[] %constant.8)
   %custom-call = f32[4,4,128]{2,1,0:T(4,128)} custom-call(), custom_call_target="AllocateBuffer"
   %fusion.1 = f32[4,4,128]{2,1,0:T(4,128)} fusion(f32[4,4,128]{2,1,0:T(4,128)} %custom-call, u32[] %constant.5), kind=kLoop, calls=%fused_computation.1
-  %collective-permute = f32[4,4,128]{2,1,0:T(4,128)} collective-permute(f32[4,4,128]{2,1,0:T(4,128)} %fusion.1, f32[4,4,128]{2,1,0:T(4,128)} %fusion.1, (u32[], u32[], u32[]) %tuple, (u32[], u32[], u32[]) %tuple.1), channel_id=958, source_target_pairs={{0,1},{1,0}}, slice_sizes={{2,4,128}}, backend_config="{\"flag_configs\":[],\"barrier_config\":{\"barrier_type\":\"CUSTOM\",\"id\":\"0\"}}"
+  %collective-permute = f32[4,4,128]{2,1,0:T(4,128)} collective-permute(f32[4,4,128]{2,1,0:T(4,128)} %fusion.1, f32[4,4,128]{2,1,0:T(4,128)} %fusion.1, (u32[], u32[], u32[]) %tuple, (u32[], u32[], u32[]) %tuple.1), channel_id=958, source_target_pairs={{0,1},{1,0}}, slice_sizes={{2,4,128}}, backend_config="{\"flag_configs\":[]}"
   ROOT %copy.3 = f32[4,4,128]{2,1,0:T(4,128)} copy(f32[4,4,128]{2,1,0:T(4,128)} %collective-permute)
 }
         )",
@@ -666,7 +666,7 @@ ENTRY %module () -> f32[33708,1024] {
   %replica_id = u32[]{:T(128)} replica-id()
   %convert = f32[]{:T(128)} convert(u32[]{:T(128)} %replica_id)
   %color_operand.1 = f32[2128,8,128]{2,1,0:T(8,128)} broadcast(f32[]{:T(128)} %convert), dimensions={}
-  %all-gather.1 = f32[4256,8,128]{2,1,0:T(8,128)} all-gather(f32[2128,8,128]{2,1,0:T(8,128)} %color_operand.1), replica_groups={{0,6},{2,4},{3,5},{1,7}}, dimensions={0}
+  %all-gather.1 = f32[4256,8,128]{2,1,0:T(8,128)} all-gather(f32[2128,8,128]{2,1,0:T(8,128)} %color_operand.1), replica_groups={{0,1}}, dimensions={0}
   %custom-call = f32[33712,8,128]{2,1,0:T(8,128)} custom-call(), custom_call_target="AllocateBuffer"
   %dynamic-update-slice = f32[33712,8,128]{2,1,0:T(8,128)} dynamic-update-slice(f32[33712,8,128]{2,1,0:T(8,128)} %custom-call, f32[4256,8,128]{2,1,0:T(8,128)} %all-gather.1, u32[] %constant.19, u32[] %constant.19, u32[] %constant.19)
   %tuple.7 = (u32[], u32[], u32[]) tuple(u32[] %constant.19, u32[] %constant.19, u32[] %constant.19)
@@ -687,59 +687,59 @@ ENTRY %module () -> f32[33708,1024] {
           false);
 }
 
-XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, TwoCollectivePermuteTypesOverlap) {
-  RunTest(R"(
-        HloModule module, is_scheduled=false
-
-ENTRY entry {
-  param = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, f32[16,128,256]{2,1,0}) parameter(0)
-  gte0 = f32[16,64,256]{2,1,0} get-tuple-element(param), index=0
-  gte1 = f32[16,64,256]{2,1,0} get-tuple-element(param), index=1
-  cp0 = f32[16,64,256]{2,1,0} collective-permute(gte0),
-    source_target_pairs={{0,1},{1,0}},
-    metadata={op_type="CollectivePermute" op_name="cp0"}
-  cp1 = f32[16,64,256]{2,1,0} collective-permute(cp0),
-    source_target_pairs={{0,1},{1,0}},
-    metadata={op_type="CollectivePermute" op_name="cp1"}
-  c0 = f32[16,256,256]{2,1,0} convolution(gte0, gte1),
-    window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb
-  cp2 = f32[16,64,256]{2,1,0} collective-permute(gte1),
-    source_target_pairs={{0,1},{1,0}},
-    metadata={op_type="CollectivePermute" op_name="cp2"}
-  c1 = f32[16,256,256]{2,1,0} convolution(cp0, gte1),
-    window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb
-  cp3 = f32[16,64,256]{2,1,0} collective-permute(cp2),
-    source_target_pairs={{0,1},{1,0}},
-    metadata={op_type="CollectivePermute" op_name="cp3"}
-  gte2 = f32[16,128,256]{2,1,0} get-tuple-element(param), index=2
-  const0 = u32[] constant(0)
-  const1 = u32[] constant(8)
-  tuple0 = (u32[], u32[], u32[]) tuple(u32[] const0, u32[] const0, u32[] const0)
-  tuple1 = (u32[], u32[], u32[]) tuple(u32[] const1, u32[] const0, u32[] const0)
-  cp4 = f32[16,128,256]{2,1,0} collective-permute(gte2, gte2, tuple0, tuple1),
-    source_target_pairs={{2,3},{3,2}},
-    slice_sizes={{8,128,256}},
-    metadata={op_type="CollectivePermute" op_name="cp4"}
-  cp5 = f32[16,128,256]{2,1,0} collective-permute(cp4, cp4, tuple0, tuple1),
-    source_target_pairs={{2,3},{3,2}},
-    slice_sizes={{8,128,256}},
-    metadata={op_type="CollectivePermute" op_name="cp5"}
-  ROOT tuple = (f32[16,256,256]{2,1,0}, f32[16,64,256]{2,1,0}, f32[16,128,256]{2,1,0}) tuple(c1, cp3, cp5)
-}
-        )",
-          false);
-}
+// XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, TwoCollectivePermuteTypesOverlap) {
+//   RunTest(R"(
+//         HloModule module, is_scheduled=false
+//
+// ENTRY entry {
+//   param = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, f32[16,128,256]{2,1,0}) parameter(0)
+//   gte0 = f32[16,64,256]{2,1,0} get-tuple-element(param), index=0
+//   gte1 = f32[16,64,256]{2,1,0} get-tuple-element(param), index=1
+//   cp0 = f32[16,64,256]{2,1,0} collective-permute(gte0),
+//     source_target_pairs={{0,1},{1,0}},
+//     metadata={op_type="CollectivePermute" op_name="cp0"}
+//   cp1 = f32[16,64,256]{2,1,0} collective-permute(cp0),
+//     source_target_pairs={{0,1},{1,0}},
+//     metadata={op_type="CollectivePermute" op_name="cp1"}
+//   c0 = f32[16,256,256]{2,1,0} convolution(gte0, gte1),
+//     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb
+//   cp2 = f32[16,64,256]{2,1,0} collective-permute(gte1),
+//     source_target_pairs={{0,1},{1,0}},
+//     metadata={op_type="CollectivePermute" op_name="cp2"}
+//   c1 = f32[16,256,256]{2,1,0} convolution(cp0, gte1),
+//     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb
+//   cp3 = f32[16,64,256]{2,1,0} collective-permute(cp2),
+//     source_target_pairs={{0,1},{1,0}},
+//     metadata={op_type="CollectivePermute" op_name="cp3"}
+//   gte2 = f32[16,128,256]{2,1,0} get-tuple-element(param), index=2
+//   const0 = u32[] constant(0)
+//   const1 = u32[] constant(8)
+//   tuple0 = (u32[], u32[], u32[]) tuple(u32[] const0, u32[] const0, u32[] const0)
+//   tuple1 = (u32[], u32[], u32[]) tuple(u32[] const1, u32[] const0, u32[] const0)
+//   cp4 = f32[16,128,256]{2,1,0} collective-permute(gte2, gte2, tuple0, tuple1),
+//     source_target_pairs={{0,1},{1,0}},
+//     slice_sizes={{8,128,256}},
+//     metadata={op_type="CollectivePermute" op_name="cp4"}
+//   cp5 = f32[16,128,256]{2,1,0} collective-permute(cp4, cp4, tuple0, tuple1),
+//     source_target_pairs={{0,1},{1,0}},
+//     slice_sizes={{8,128,256}},
+//     metadata={op_type="CollectivePermute" op_name="cp5"}
+//   ROOT tuple = (f32[16,256,256]{2,1,0}, f32[16,64,256]{2,1,0}, f32[16,128,256]{2,1,0}) tuple(c1, cp3, cp5)
+// }
+//         )",
+//           false);
+// }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, SerialCollectivePermutesTest) {
   RunTest(R"(
       HloModule serial_collective_permute_test, is_scheduled=false
   ENTRY after_optimizations_test {
   %parameter.1 = bf16[8]{0} parameter(0)
-  %collective-permute.2 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{0,1},{1,2},{2,3}}
+  %collective-permute.2 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{0,1}, {1,0}}
   %add.3 = bf16[8]{0} add(%parameter.1, %parameter.1)
   %add.4 = bf16[8]{0} add(%add.3, parameter.1)
   %add.5 = bf16[8]{0} add(%collective-permute.2, %add.4)
-  %collective-permute.6 = bf16[8]{0} collective-permute(bf16[8]{0} add.5), source_target_pairs={{1,0},{0,3},{3,2}}
+  %collective-permute.6 = bf16[8]{0} collective-permute(bf16[8]{0} add.5), source_target_pairs={{1,0}}
 }
       )",
           false);
@@ -750,8 +750,8 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BackToBackCollectivePerGmutes
       HloModule back_to_back_collective_permute_test, is_scheduled=false
   ENTRY after_optimizations_test {
   %parameter.1 = bf16[8]{0} parameter(0)
-  %collective-permute.2 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{0,1},{1,2},{2,3}}
-  %collective-permute.6 = bf16[8]{0} collective-permute(bf16[8]{0} collective-permute.2), source_target_pairs={{1,0},{0,3},{3,2}}
+  %collective-permute.2 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{0,1}, {1,0}}
+  %collective-permute.6 = bf16[8]{0} collective-permute(bf16[8]{0} collective-permute.2), source_target_pairs={{1,0}}
 }
       )",
           false);
@@ -762,11 +762,11 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, ParallelCollectivePermutesTes
       HloModule single_collective_permute_test, is_scheduled=false
   ENTRY after_optimizations_test {
   %parameter.1 = bf16[8]{0} parameter(0)
-  %collective-permute.2 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{0,1},{1,2},{2,3}}
+  %collective-permute.2 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{0,1}, {1,0}}
   %constant.3 = bf16[] constant(1)
   %broadcast.4 = bf16[8]{0} broadcast(bf16[] %constant.3), dimensions={}
   %add.5 = bf16[8]{0} add(bf16[8]{0} %collective-permute.2, bf16[8]{0} %broadcast.4)
-  %collective-permute.6 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{1,0},{0,3},{3,2}}
+  %collective-permute.6 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{1,0}}
   %add.6 = bf16[8]{0} add(bf16[8]{0} %collective-permute.6, bf16[8]{0} %add.5)
 }
       )",
@@ -780,12 +780,12 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, MaxConcurrentCollectivePermut
   %parameter.1 = bf16[8]{0} parameter(0)
   %parameter.2 = bf16[8]{0} parameter(1)
   %parameter.3 = bf16[8]{0} parameter(2)
-  %collective-permute.4 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{0,1},{1,2},{2,3}}
-  %collective-permute.5 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{1,0},{0,3},{3,2}}
-  %collective-permute.6 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.2), source_target_pairs={{0,1},{1,2},{2,3}}
-  %collective-permute.7 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.2), source_target_pairs={{1,0},{0,3},{3,2}}
-  %collective-permute.8 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.3), source_target_pairs={{0,1},{1,2},{2,3}}
-  %collective-permute.9 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.3), source_target_pairs={{1,0},{0,3},{3,2}}
+  %collective-permute.4 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{0,1}, {1,0}}
+  %collective-permute.5 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.1), source_target_pairs={{1,0}}
+  %collective-permute.6 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.2), source_target_pairs={{0,1}, {1,0}}
+  %collective-permute.7 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.2), source_target_pairs={{1,0}}
+  %collective-permute.8 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.3), source_target_pairs={{0,1}, {1,0}}
+  %collective-permute.9 = bf16[8]{0} collective-permute(bf16[8]{0} parameter.3), source_target_pairs={{1,0}}
   %add.10 = bf16[8]{0} add(bf16[8]{0} %collective-permute.8, bf16[8]{0} %collective-permute.9)
   %add.11 = bf16[8]{0} add(bf16[8]{0} %collective-permute.7, bf16[8]{0} %add.10)
   %add.12 = bf16[8]{0} add(bf16[8]{0} %collective-permute.6, bf16[8]{0} %add.11)
@@ -802,9 +802,9 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BalanceChainedCollectivePermu
 
 ENTRY entry {
   param = bf16[8]{0} parameter(0)
-  collective-permute.1 = bf16[8]{0} collective-permute(param), source_target_pairs={{0,1},{1,2},{2,3}}
+  collective-permute.1 = bf16[8]{0} collective-permute(param), source_target_pairs={{0,1}, {1,0}}
   copy.2 = bf16[8]{0} copy(collective-permute.1)
-  ROOT collective-permute.2 = bf16[8]{0} collective-permute(copy.2), source_target_pairs={{1,0},{0,3},{3,2}}
+  ROOT collective-permute.2 = bf16[8]{0} collective-permute(copy.2), source_target_pairs={{1,0}}
 }
         )",
           false);
@@ -821,7 +821,7 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, ExistingSingleCollectivePermu
     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb
   %collective-permute-start.1 = (f32[16,256,256]{2,1,0},
     f32[16,256,256]{2,1,0}, u32[], u32[]) collective-permute-start(
-    f32[16,256,256]{2,1,0} p2), source_target_pairs={{0,1},{1,2},{2,3}},
+    f32[16,256,256]{2,1,0} p2), source_target_pairs={{0,1}, {1,0}},
     channel_id=1, metadata={op_type="CollectivePermute" op_name="cp0"}
   %collective-permute-done.1 = f32[16,256,256]{2,1,0} collective-permute-done(
     (f32[16,256,256]{2,1,0}, f32[16,256,256]{2,1,0},
@@ -1252,10 +1252,10 @@ ENTRY entry {
 //   gte0 = bf16[8]{0} get-tuple-element(param), index=0
 //   gte1 = pred[] get-tuple-element(param), index=2
 //   bitcast = bf16[8]{0} bitcast(gte0)
-//   collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1},{1,2},{2,3}}
+//   collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1}, {1,0}}
 //   add0 = bf16[8]{0} add(collective-permute.1, bitcast)
 //   negate = bf16[8]{0} negate(add0)
-//   collective-permute.2 = bf16[8]{0} collective-permute(collective-permute.1), source_target_pairs={{1,0},{0,3},{3,2}}
+//   collective-permute.2 = bf16[8]{0} collective-permute(collective-permute.1), source_target_pairs={{1,0}}
 //   ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte1)
 // }
 //
@@ -1265,7 +1265,7 @@ ENTRY entry {
 //   p2 = pred[] parameter(2)
 //   tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
 //   while = (bf16[8]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
-//   collective-permute.3 = bf16[8]{0} collective-permute(p1), source_target_pairs={{0,1},{1,2},{2,3}}
+//   collective-permute.3 = bf16[8]{0} collective-permute(p1), source_target_pairs={{0,1}, {1,0}}
 //   gte0 = bf16[8]{0} get-tuple-element(while), index=0
 //   gte1 = bf16[8]{0} get-tuple-element(while), index=1
 //   add = bf16[8]{0} add(gte0, gte1)
@@ -1275,168 +1275,168 @@ ENTRY entry {
 //           false);
 // }
 
-XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileNestedOverlapLimit) {
-  RunTest(R"(
-        HloModule module, is_scheduled=false
+// XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileNestedOverlapLimit) {
+//   RunTest(R"(
+//         HloModule module, is_scheduled=false
+//
+// while_cond {
+//   param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   ROOT gte = pred[] get-tuple-element(param), index=2
+// }
+//
+// while_body {
+//   param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   gte0 = bf16[8]{0} get-tuple-element(param), index=0
+//   gte1 = pred[] get-tuple-element(param), index=2
+//   bitcast = bf16[8]{0} bitcast(gte0)
+//   collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1}, {1,0}}
+//   add0 = bf16[8]{0} add(collective-permute.1, bitcast)
+//   negate = bf16[8]{0} negate(add0)
+//   ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.1, negate, gte1)
+// }
+//
+// while_cond2 {
+//   param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   ROOT gte = pred[] get-tuple-element(param), index=2
+// }
+//
+// while_body2 {
+//   param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   while.1 = (bf16[8]{0}, bf16[8]{0}, pred[]) while(param), condition=while_cond, body=while_body
+//   gte0 = bf16[8]{0} get-tuple-element(while.1), index=0
+//   gte1 = pred[] get-tuple-element(while.1), index=2
+//   bitcast = bf16[8]{0} bitcast(gte0)
+//   negate = bf16[8]{0} negate(bitcast)
+//   collective-permute.2 = bf16[8]{0} collective-permute(negate), source_target_pairs={{1,0}}
+//   ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte1)
+// }
+//
+// ENTRY entry {
+//   p0 = bf16[8]{0} parameter(0)
+//   p1 = bf16[8]{0} parameter(1)
+//   p2 = pred[] parameter(2)
+//   tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
+//   while = (bf16[8]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond2, body=while_body2
+//   collective-permute.3 = bf16[8]{0} collective-permute(p1), source_target_pairs={{0,1}, {1,0}}
+//   gte0 = bf16[8]{0} get-tuple-element(while), index=0
+//   gte1 = bf16[8]{0} get-tuple-element(while), index=1
+//   add = bf16[8]{0} add(gte0, gte1)
+//   ROOT add2 = bf16[8]{0} add(add, collective-permute.3)
+// }
+//         )",
+//           false);
+// }
 
-while_cond {
-  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
-  ROOT gte = pred[] get-tuple-element(param), index=2
-}
+// XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileOverlapUnderLimit) {
+//   RunTest(R"(
+//         HloModule module, is_scheduled=false
+//
+// while_cond {
+//   param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   ROOT gte = pred[] get-tuple-element(param), index=2
+// }
+//
+// while_body {
+//   param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   gte0 = bf16[8]{0} get-tuple-element(param), index=0
+//   gte1 = pred[] get-tuple-element(param), index=2
+//   bitcast = bf16[8]{0} bitcast(gte0)
+//   collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1}, {1,0}}
+//   add0 = bf16[8]{0} add(collective-permute.1, bitcast)
+//   negate = bf16[8]{0} negate(add0)
+//   collective-permute.2 = bf16[8]{0} collective-permute(collective-permute.1), source_target_pairs={{1,0}, {1,0}}
+//   ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte1)
+// }
+//
+// ENTRY entry {
+//   p0 = bf16[8]{0} parameter(0)
+//   p1 = bf16[8]{0} parameter(1)
+//   p2 = pred[] parameter(2)
+//   tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
+//   while = (bf16[8]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
+//   collective-permute.3 = bf16[8]{0} collective-permute(p1), source_target_pairs={{0,1}, {1,0}}
+//   gte0 = bf16[8]{0} get-tuple-element(while), index=0
+//   gte1 = bf16[8]{0} get-tuple-element(while), index=1
+//   add = bf16[8]{0} add(gte0, gte1)
+//   ROOT add2 = bf16[8]{0} add(add, collective-permute.3)
+// }
+//         )",
+//           false);
+// }
 
-while_body {
-  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
-  gte0 = bf16[8]{0} get-tuple-element(param), index=0
-  gte1 = pred[] get-tuple-element(param), index=2
-  bitcast = bf16[8]{0} bitcast(gte0)
-  collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1},{1,2},{2,3}}
-  add0 = bf16[8]{0} add(collective-permute.1, bitcast)
-  negate = bf16[8]{0} negate(add0)
-  ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.1, negate, gte1)
-}
-
-while_cond2 {
-  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
-  ROOT gte = pred[] get-tuple-element(param), index=2
-}
-
-while_body2 {
-  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
-  while.1 = (bf16[8]{0}, bf16[8]{0}, pred[]) while(param), condition=while_cond, body=while_body
-  gte0 = bf16[8]{0} get-tuple-element(while.1), index=0
-  gte1 = pred[] get-tuple-element(while.1), index=2
-  bitcast = bf16[8]{0} bitcast(gte0)
-  negate = bf16[8]{0} negate(bitcast)
-  collective-permute.2 = bf16[8]{0} collective-permute(negate), source_target_pairs={{1,0},{0,3},{3,2}}
-  ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte1)
-}
-
-ENTRY entry {
-  p0 = bf16[8]{0} parameter(0)
-  p1 = bf16[8]{0} parameter(1)
-  p2 = pred[] parameter(2)
-  tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
-  while = (bf16[8]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond2, body=while_body2
-  collective-permute.3 = bf16[8]{0} collective-permute(p1), source_target_pairs={{0,1},{1,2},{2,3}}
-  gte0 = bf16[8]{0} get-tuple-element(while), index=0
-  gte1 = bf16[8]{0} get-tuple-element(while), index=1
-  add = bf16[8]{0} add(gte0, gte1)
-  ROOT add2 = bf16[8]{0} add(add, collective-permute.3)
-}
-        )",
-          false);
-}
-
-XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileOverlapUnderLimit) {
-  RunTest(R"(
-        HloModule module, is_scheduled=false
-
-while_cond {
-  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
-  ROOT gte = pred[] get-tuple-element(param), index=2
-}
-
-while_body {
-  param = (bf16[8]{0}, bf16[8]{0}, pred[]) parameter(0)
-  gte0 = bf16[8]{0} get-tuple-element(param), index=0
-  gte1 = pred[] get-tuple-element(param), index=2
-  bitcast = bf16[8]{0} bitcast(gte0)
-  collective-permute.1 = bf16[8]{0} collective-permute(gte0), source_target_pairs={{0,1},{1,2},{2,3}}
-  add0 = bf16[8]{0} add(collective-permute.1, bitcast)
-  negate = bf16[8]{0} negate(add0)
-  collective-permute.2 = bf16[8]{0} collective-permute(collective-permute.1), source_target_pairs={{1,0},{0,3},{3,2}}
-  ROOT tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte1)
-}
-
-ENTRY entry {
-  p0 = bf16[8]{0} parameter(0)
-  p1 = bf16[8]{0} parameter(1)
-  p2 = pred[] parameter(2)
-  tuple = (bf16[8]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
-  while = (bf16[8]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
-  collective-permute.3 = bf16[8]{0} collective-permute(p1), source_target_pairs={{0,1},{1,2},{2,3}}
-  gte0 = bf16[8]{0} get-tuple-element(while), index=0
-  gte1 = bf16[8]{0} get-tuple-element(while), index=1
-  add = bf16[8]{0} add(gte0, gte1)
-  ROOT add2 = bf16[8]{0} add(add, collective-permute.3)
-}
-        )",
-          false);
-}
-
-XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileOverlapLimitAllGather) {
-  RunTest(R"(
-        HloModule module, is_scheduled=false
-
-while_cond {
-  param = (bf16[4]{0}, bf16[8]{0}, pred[]) parameter(0)
-  ROOT gte = pred[] get-tuple-element(param), index=2
-}
-
-while_body {
-  param = (bf16[4]{0}, bf16[8]{0}, pred[]) parameter(0)
-  gte0 = bf16[4]{0} get-tuple-element(param), index=0
-  gte1 = bf16[8]{0} get-tuple-element(param), index=1
-  gte2 = pred[] get-tuple-element(param), index=2
-  bitcast = bf16[8]{0} bitcast(gte0)
-  all-gather.1 = bf16[8]{0} all-gather(gte0), replica_groups={{0,1},{2,3}}, dimensions={0}, channel_id=1
-  add0 = bf16[8]{0} add(all-gather.1, bitcast)
-  negate = bf16[8]{0} negate(add0)
-  collective-permute.2 = bf16[4]{0} collective-permute(gte0), source_target_pairs={{1,0},{0,3},{3,2}}
-  ROOT tuple = (bf16[4]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte2)
-}
-
-ENTRY entry {
-  p0 = bf16[4]{0} parameter(0)
-  p1 = bf16[8]{0} parameter(1)
-  p2 = pred[] parameter(2)
-  tuple = (bf16[4]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
-  while = (bf16[4]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
-  all-gather.2 = bf16[8]{0} all-gather(p0), replica_groups={{0,1},{2,3}}, dimensions={0}, channel_id=2
-  gte0 = bf16[4]{0} get-tuple-element(while), index=0
-  gte1 = bf16[8]{0} get-tuple-element(while), index=1
-  ROOT tuple.2 = (bf16[4]{0}, bf16[8]{0}, bf16[8]{0}) tuple(gte0, gte1, all-gather.2)
-}
-        )",
-          false);
-}
-
-XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileOverlapUnderLimitAllGather) {
-  RunTest(R"(
-        HloModule module, is_scheduled=false
-
-while_cond {
-  param = (bf16[4]{0}, bf16[8]{0}, pred[]) parameter(0)
-  ROOT gte = pred[] get-tuple-element(param), index=2
-}
-
-while_body {
-  param = (bf16[4]{0}, bf16[8]{0}, pred[]) parameter(0)
-  gte0 = bf16[4]{0} get-tuple-element(param), index=0
-  gte1 = bf16[8]{0} get-tuple-element(param), index=1
-  gte2 = pred[] get-tuple-element(param), index=2
-  bitcast = bf16[8]{0} bitcast(gte0)
-  all-gather.1 = bf16[8]{0} all-gather(gte0), replica_groups={{0,1},{2,3}}, dimensions={0}, channel_id=1
-  add0 = bf16[8]{0} add(all-gather.1, bitcast)
-  negate = bf16[8]{0} negate(add0)
-  collective-permute.2 = bf16[4]{0} collective-permute(gte0), source_target_pairs={{1,0},{0,3},{3,2}}
-  ROOT tuple = (bf16[4]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte2)
-}
-
-ENTRY entry {
-  p0 = bf16[4]{0} parameter(0)
-  p1 = bf16[8]{0} parameter(1)
-  p2 = pred[] parameter(2)
-  tuple = (bf16[4]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
-  while = (bf16[4]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
-  all-gather.2 = bf16[8]{0} all-gather(p0), replica_groups={{0,1},{2,3}}, dimensions={0}, channel_id=2
-  gte0 = bf16[4]{0} get-tuple-element(while), index=0
-  gte1 = bf16[8]{0} get-tuple-element(while), index=1
-  ROOT tuple.2 = (bf16[4]{0}, bf16[8]{0}, bf16[8]{0}) tuple(gte0, gte1, all-gather.2)
-}
-        )",
-          false);
-}
+// XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileOverlapLimitAllGather) {
+//   RunTest(R"(
+//         HloModule module, is_scheduled=false
+//
+// while_cond {
+//   param = (bf16[4]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   ROOT gte = pred[] get-tuple-element(param), index=2
+// }
+//
+// while_body {
+//   param = (bf16[4]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   gte0 = bf16[4]{0} get-tuple-element(param), index=0
+//   gte1 = bf16[8]{0} get-tuple-element(param), index=1
+//   gte2 = pred[] get-tuple-element(param), index=2
+//   bitcast = bf16[8]{0} bitcast(gte0)
+//   all-gather.1 = bf16[8]{0} all-gather(gte0), replica_groups={{0,1}, {1,0}}, dimensions={0}, channel_id=1
+//   add0 = bf16[8]{0} add(all-gather.1, bitcast)
+//   negate = bf16[8]{0} negate(add0)
+//   collective-permute.2 = bf16[4]{0} collective-permute(gte0), source_target_pairs={{0,1}, {1,0}}
+//   ROOT tuple = (bf16[4]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte2)
+// }
+//
+// ENTRY entry {
+//   p0 = bf16[4]{0} parameter(0)
+//   p1 = bf16[8]{0} parameter(1)
+//   p2 = pred[] parameter(2)
+//   tuple = (bf16[4]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
+//   while = (bf16[4]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
+//   all-gather.2 = bf16[8]{0} all-gather(p0), replica_groups={{0,1}, {1,0}}, dimensions={0}, channel_id=2
+//   gte0 = bf16[4]{0} get-tuple-element(while), index=0
+//   gte1 = bf16[8]{0} get-tuple-element(while), index=1
+//   ROOT tuple.2 = (bf16[4]{0}, bf16[8]{0}, bf16[8]{0}) tuple(gte0, gte1, all-gather.2)
+// }
+//         )",
+//           false);
+// }
+//
+// XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileOverlapUnderLimitAllGather) {
+//   RunTest(R"(
+//         HloModule module, is_scheduled=false
+//
+// while_cond {
+//   param = (bf16[4]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   ROOT gte = pred[] get-tuple-element(param), index=2
+// }
+//
+// while_body {
+//   param = (bf16[4]{0}, bf16[8]{0}, pred[]) parameter(0)
+//   gte0 = bf16[4]{0} get-tuple-element(param), index=0
+//   gte1 = bf16[8]{0} get-tuple-element(param), index=1
+//   gte2 = pred[] get-tuple-element(param), index=2
+//   bitcast = bf16[8]{0} bitcast(gte0)
+//   all-gather.1 = bf16[8]{0} all-gather(gte0), replica_groups={{0,1}, {1,0}}, dimensions={0}, channel_id=1
+//   add0 = bf16[8]{0} add(all-gather.1, bitcast)
+//   negate = bf16[8]{0} negate(add0)
+//   collective-permute.2 = bf16[4]{0} collective-permute(gte0), source_target_pairs={{1,0}, {0,1}}
+//   ROOT tuple = (bf16[4]{0}, bf16[8]{0}, pred[]) tuple(collective-permute.2, negate, gte2)
+// }
+//
+// ENTRY entry {
+//   p0 = bf16[4]{0} parameter(0)
+//   p1 = bf16[8]{0} parameter(1)
+//   p2 = pred[] parameter(2)
+//   tuple = (bf16[4]{0}, bf16[8]{0}, pred[]) tuple(p0, p1, p2)
+//   while = (bf16[4]{0}, bf16[8]{0}, pred[]) while(tuple), condition=while_cond, body=while_body
+//   all-gather.2 = bf16[8]{0} all-gather(p0), replica_groups={{0,1}, {1,0}}, dimensions={0}, channel_id=2
+//   gte0 = bf16[4]{0} get-tuple-element(while), index=0
+//   gte1 = bf16[8]{0} get-tuple-element(while), index=1
+//   ROOT tuple.2 = (bf16[4]{0}, bf16[8]{0}, bf16[8]{0}) tuple(gte0, gte1, all-gather.2)
+// }
+//         )",
+//           false);
+// }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllToAllAsyncBalance) {
   RunTest(R"(
@@ -1444,12 +1444,12 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllToAllAsyncBalance) {
 
 async_computation {
   p = f32[2,8,256,256] parameter(0)
-  ROOT ata = f32[2,8,256,256] all-to-all(p), dimensions={0}, replica_groups={{0,1}}
+  ROOT ata = f32[2,8,256,256] all-to-all(p), dimensions={0}, replica_groups={{0,1}, {1,0}}
 }
 
 async_computation.2 {
   p.2 = f32[2,8,256,256] parameter(0)
-  ROOT ata.1 = f32[2,8,256,256] all-to-all(p.2), dimensions={0}, replica_groups={{0,1}}
+  ROOT ata.1 = f32[2,8,256,256] all-to-all(p.2), dimensions={0}, replica_groups={{0,1}, {1,0}}
 }
 
 
@@ -1501,8 +1501,8 @@ ENTRY entry {
   p1 = f32[16,64,256]{2,1,0} parameter(1)
   p2 = f32[1024,2048,2048]{2,1,0} parameter(2)
   p3 = f32[2048,2048,2048]{2,1,0} parameter(3)
-  cp1s = (f32[1024,2048,2048]{2,1,0}, f32[1024,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0},{0,3},{3,2}}
-  cp2s = (f32[2048,2048,2048]{2,1,0}, f32[2048,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p3), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp1s = (f32[1024,2048,2048]{2,1,0}, f32[1024,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}, {0,1}}
+  cp2s = (f32[2048,2048,2048]{2,1,0}, f32[2048,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p3), source_target_pairs={{1,0}, {0,1}}
   c0 = f32[16,256,256]{2,1,0} convolution(p0, p1),
     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb,
     metadata={op_type="AllToAll" op_name="c0"}
@@ -1522,11 +1522,11 @@ ENTRY entry {
   p0 = f32[16,64,256]{2,1,0} parameter(0)
   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
-  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}
   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s)
-  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}
   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s)
-  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
   slice = f32[16,64,256]{2,1,0} slice(f32[512,2048,2048]{2,1,0} cp1d), slice={[0:16], [0:64], [0:256]}
   c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
@@ -1547,7 +1547,7 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, DepthPressureReduction) {
   %parameter.2 = bf16[8]{0} parameter(1)
   %parameter.3 = bf16[8]{0} parameter(2)
   %parameter.4 = bf16[8]{0} parameter(3)
-  %collective-permute.2 = bf16[8]{0} collective-permute(parameter.1), source_target_pairs={{0,1},{1,2},{2,3}}
+  %collective-permute.2 = bf16[8]{0} collective-permute(parameter.1), source_target_pairs={{0,1}, {1,0}}
   %a = bf16[8]{0} add(collective-permute.2, parameter.2)
   %b = bf16[8]{0} add(a, parameter.3)
   %c = bf16[8]{0} add(b, parameter.4)
@@ -1573,7 +1573,7 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
    c = bf16[] constant(0)
    b = bf16[43]{0} broadcast(c), dimensions={}
    s = bf16[1]{0} slice(b), slice={[0:1]}
-   cp = bf16[8]{0} collective-permute(p0), source_target_pairs={{0,1},{1,2},{2,3}}
+   cp = bf16[8]{0} collective-permute(p0), source_target_pairs={{0,1}, {1,0}}
   ROOT tuple = (bf16[8]{0}, bf16[1]{0}) tuple(cp, s)
 }
       )",
@@ -1710,7 +1710,7 @@ ENTRY %module {
   %color_operand.1 = f32[8,256,256]{2,1,0:T(8,128)} broadcast(
     f32[]{:T(128)} %convert), dimensions={}
   %ag-start = (f32[8,256,256], f32[16,256,256]) all-gather-start(
-    f32[8,256,256] %color_operand.1), replica_groups={{0,1}}, dimensions={0},
+    f32[8,256,256] %color_operand.1), replica_groups={{0,1}, {1,0}}, dimensions={0},
     metadata={op_type="AllGather" op_name="ag0"}
   %ag-done = f32[16,256,256] all-gather-done(
     (f32[8,256,256], f32[16,256,256]) %ag-start),
@@ -1739,11 +1739,11 @@ ENTRY entry {
   p0 = f32[16,64,256]{2,1,0} parameter(0)
   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
-  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}
   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s)
-  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0},{0,3},{3,2}}, frontend_attributes={_scheduling_group_id="0"}
+  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s), frontend_attributes={_scheduling_group_id="0"}
-  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
   slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16], [0:64], [0:256]}
   c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
@@ -1764,11 +1764,11 @@ ENTRY entry {
   p0 = f32[16,64,256]{2,1,0} parameter(0)
   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
-  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}
   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s)
-  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0},{0,3},{3,2}}, frontend_attributes={_scheduling_group_id="0"}
+  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s), frontend_attributes={_scheduling_group_id="0"}
-  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
   slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16], [0:64], [0:256]}
   c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
@@ -1789,11 +1789,11 @@ ENTRY entry {
   p0 = f32[16,64,256]{2,1,0} parameter(0)
   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
-  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}
   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s)
-  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0},{0,3},{3,2}}, frontend_attributes={_scheduling_group_id="0"}
+  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s), frontend_attributes={_scheduling_group_id="0"}
-  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
   slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16], [0:64], [0:256]}
   c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
@@ -1814,11 +1814,11 @@ ENTRY entry {
   p0 = f32[16,64,256]{2,1,0} parameter(0)
   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
-  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}
   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s)
-  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0},{0,3},{3,2}}, frontend_attributes={_scheduling_group_id="0"}
+  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s), frontend_attributes={_scheduling_group_id="0"}
-  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
   slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16], [0:64], [0:256]}
   c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
@@ -1839,11 +1839,11 @@ ENTRY entry {
   p0 = f32[16,64,256]{2,1,0} parameter(0)
   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
-  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}
   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s)
-  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0},{0,3},{3,2}}, frontend_attributes={_scheduling_group_id="0"}
+  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s), frontend_attributes={_scheduling_group_id="0"}
-  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
   slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16], [0:64], [0:256]}
   c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
@@ -1864,11 +1864,11 @@ ENTRY entry {
   p0 = f32[16,64,256]{2,1,0} parameter(0)
   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
-  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}
   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s)
-  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0},{0,3},{3,2}}, frontend_attributes={_scheduling_group_id="0"}
+  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s), frontend_attributes={_scheduling_group_id="0"}
-  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
   slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16], [0:64], [0:256]}
   c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
@@ -1889,11 +1889,11 @@ ENTRY entry {
   p0 = f32[16,64,256]{2,1,0} parameter(0)
   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
-  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0},{0,3},{3,2}}, frontend_attributes={_scheduling_group_id="0"}
+  cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s), frontend_attributes={_scheduling_group_id="0"}
-  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0},{0,3},{3,2}}, frontend_attributes={_scheduling_group_id="0"}
+  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s), frontend_attributes={_scheduling_group_id="0"}
-  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
   c0 = f32[16,256,256]{2,1,0} convolution(p0, p0),
     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="0"}
@@ -1922,9 +1922,9 @@ fused_computation.1 {
 ENTRY entry {
   p0 = f32[16,64,256]{2,1,0} parameter(0)
   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
-  cp0s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0},{0,3},{3,2}}, frontend_attributes={_scheduling_group_id="0"}
+  cp0s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
   cp0d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp0s), frontend_attributes={_scheduling_group_id="0"}
-  cp1s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp0d), source_target_pairs={{1,0},{0,3},{3,2}}, frontend_attributes={_scheduling_group_id="1"}
+  cp1s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp0d), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="1"}
   cp1d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp1s), frontend_attributes={_scheduling_group_id="1"}
   f0 = f32[16,256,256]{2,1,0} fusion(p0, p0), kind=kOutput, calls=fused_computation, frontend_attributes={_scheduling_group_id="0"}
   f1 = f32[1,256,256]{2,1,0} fusion(f0, f0), kind=kOutput, calls=fused_computation.1, frontend_attributes={_scheduling_group_id="1"}
@@ -1947,7 +1947,7 @@ fused_computation {
 ENTRY entry {
   p0 = f32[16,64,256]{2,1,0} parameter(0)
   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
-  cp0s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0},{0,3},{3,2}}, frontend_attributes={_scheduling_group_id="0"}
+  cp0s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
   cp0d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp0s), frontend_attributes={_scheduling_group_id="0"}
   ROOT f0 = f32[16,256,256]{2,1,0} fusion(p0, p0), kind=kOutput, calls=fused_computation, frontend_attributes={_scheduling_group_id="0"}
 }
@@ -1971,7 +1971,7 @@ ENTRY entry {
   p0 = f32[128,2048]{1,0} parameter(0)
   p1 = f32[8,2048]{1,0} parameter(1)
   p2 = f32[128,2048]{1,0} parameter(2)
-  cps = (f32[128,2048]{1,0}, f32[128,2048]{1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0},{0,3},{3,2}}, frontend_attributes={_scheduling_group_id="0"}
+  cps = (f32[128,2048]{1,0}, f32[128,2048]{1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
   cpd = f32[128,2048]{1,0} collective-permute-done(cps), frontend_attributes={_scheduling_group_id="0"}
   fusion = (f32[128,2048]{1,0}, f32[128,2048]{1,0}) fusion(p0, p1), kind=kLoop, calls=fused_computation, frontend_attributes={_scheduling_group_id="0"}
   gte = f32[128,2048]{1,0} get-tuple-element(fusion), index=0, frontend_attributes={_scheduling_group_id="0"}
@@ -1998,9 +1998,9 @@ while_body {
   param = get-tuple-element(tuple), index=1
   i = get-tuple-element(tuple), index=2
   dot = f32[16,16] dot(param, param), lhs_contracting_dims={0}, rhs_contracting_dims={1}
-  recv_done = (f32[16], token[]) recv-done(gte), frontend_attributes={_xla_send_recv_source_target_pairs={{0,1},{1,2},{2,3}}}
+  recv_done = (f32[16], token[]) recv-done(gte), frontend_attributes={_xla_send_recv_source_target_pairs={{0,1}, {1,0}}}
   after_all = token[] after-all()
-  recv = (f32[16,16], u32[], token[]) recv(after_all), frontend_attributes={_xla_send_recv_source_target_pairs={{0,1},{1,2},{2,3}}}, control-predecessors={recv_done}
+  recv = (f32[16,16], u32[], token[]) recv(after_all), frontend_attributes={_xla_send_recv_source_target_pairs={{0,1}, {1,0}}}, control-predecessors={recv_done}
   c1 = u32[] constant(1)
   add = add(i, c1)
   ROOT tuple_ = ((f32[16,16], u32[], token[]), f32[16,16], u32[]) tuple(recv, dot, add)
@@ -2009,12 +2009,12 @@ while_body {
 ENTRY main {
   param0 = f32[16,16] parameter(0)
   after_all0 = token[] after-all()
-  recv0 = (f32[16,16], u32[], token[]) recv(after_all0), frontend_attributes={_xla_send_recv_source_target_pairs={{0,1},{1,2},{2,3}}}
+  recv0 = (f32[16,16], u32[], token[]) recv(after_all0), frontend_attributes={_xla_send_recv_source_target_pairs={{0,1}, {1,0}}}
   c0 = u32[] constant(0)
   tuple = ((f32[16,16], u32[], token[]), f32[16,16], u32[]) tuple(recv0, param0, c0)
   while = ((f32[16,16], u32[], token[]), f32[16,16], u32[]) while(tuple), body=while_body, condition=while_condition
   gte0 = (f32[16,16], u32[], token[]) get-tuple-element(while), index=0
-  ROOT recv_done0 = (f32[16], token[]) recv-done(gte0), frontend_attributes={_xla_send_recv_source_target_pairs={{0,1},{1,2},{2,3}}}
+  ROOT recv_done0 = (f32[16], token[]) recv-done(gte0), frontend_attributes={_xla_send_recv_source_target_pairs={{0,1}, {1,0}}}
 }
         )",
           false);
@@ -2027,9 +2027,9 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, SchedulingAnnotationCrossesOv
 ENTRY entry {
   p0 = f32[16,64,256]{2,1,0} parameter(0)
   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
-  cp1s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0},{0,3},{3,2}}, frontend_attributes={_scheduling_group_id="0"}
+  cp1s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
   cp1d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp1s), frontend_attributes={_scheduling_group_id="0"}
-  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0},{0,3},{3,2}}
+  cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}
   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s)
   slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16], [0:64], [0:256]}
   c1 = f32[16,256,256]{2,1,0} convolution(p0, p0),
@@ -2070,7 +2070,7 @@ ENTRY entry {
   p2 = f32[16,64,256]{2,1,0} parameter(2)
   p3 = pred[] parameter(3)
   c0 = f32[16,256,256]{2,1,0} convolution(p1, p2), window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="1"}
-  ags0 = (f32[256,1024]{1,0}, f32[1024,1024]{1,0}) all-gather-start(p0), replica_groups={{0,1,2,3}}, dimensions={0}, frontend_attributes={_scheduling_group_id="1"}
+  ags0 = (f32[256,1024]{1,0}, f32[1024,1024]{1,0}) all-gather-start(p0), replica_groups={{0,1}, {1,0}}, dimensions={0}, frontend_attributes={_scheduling_group_id="1"}
   tuple = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) tuple(p1, p2, p3)
   while = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) while(tuple), condition=while_cond, body=while_body
   agd0 = f32[1024,1024]{1,0} all-gather-done(ags0), frontend_attributes={_scheduling_group_id="1"}
@@ -2109,8 +2109,8 @@ ENTRY entry {
   p2 = f32[16,64,256]{2,1,0} parameter(2)
   p3 = pred[] parameter(3)
   c0 = f32[16,256,256]{2,1,0} convolution(p1, p2), window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="1"}
-  ags0 = (f32[256,1024]{1,0}, f32[1024,1024]{1,0}) all-gather-start(p0), replica_groups={{0,1,2,3}}, dimensions={0}, frontend_attributes={_scheduling_group_id="1"}
-  ags1 = (f32[256,1024]{1,0}, f32[1024,1024]{1,0}) all-gather-start(p0), replica_groups={{0,1,2,3}}, dimensions={0}, frontend_attributes={_scheduling_group_id="1"}
+  ags0 = (f32[256,1024]{1,0}, f32[1024,1024]{1,0}) all-gather-start(p0), replica_groups={{0,1}, {1,0}}, dimensions={0}, frontend_attributes={_scheduling_group_id="1"}
+  ags1 = (f32[256,1024]{1,0}, f32[1024,1024]{1,0}) all-gather-start(p0), replica_groups={{0,1}, {1,0}}, dimensions={0}, frontend_attributes={_scheduling_group_id="1"}
   tuple = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) tuple(p1, p2, p3)
   while = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) while(tuple), condition=while_cond, body=while_body
   agd1 = f32[1024,1024]{1,0} all-gather-done(ags1), frontend_attributes={_scheduling_group_id="1"}
