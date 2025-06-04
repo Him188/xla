@@ -22,12 +22,14 @@
 
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include <cmath>
 #include <cstdio>
-#include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <sstream>
 #include <string>
 #include <sys/resource.h>
 #include <unistd.h>
+#include <utility>
 
 namespace xla {
 
@@ -64,6 +66,8 @@ protected:
     int num_partitions;
   };
 
+  using ExeWithModule = std::pair<std::unique_ptr<PjRtLoadedExecutable>, std::unique_ptr<HloModule>>;
+
   void EnablePerformanceMeasurements() { measure_performance_ = true; }
 
   static size_t GetCurrentRSSBytes() {
@@ -77,18 +81,31 @@ protected:
     return rss * sysconf(_SC_PAGESIZE);
   }
 
-  void RunTest(const std::string_view hlo_string, bool expect_race) {
+  void RunTest(const std::string_view hlo_string, bool expect_race, int warmup_iters = 3, int measure_iters = 3) {
     setenv("NCCL_DEBUG", "INFO", 1);
 
     ASSERT_GE(client().addressable_devices().size(), 2) << "Need at least two visible CUDA devices.";
 
-    TF_ASSERT_OK_AND_ASSIGN(auto module, ParseHloText(hlo_string));
-    TF_ASSERT_OK_AND_ASSIGN(auto exe, Compile(module.get(), {2, 1}));
+    // Helper struct storing all resources required for a single iteration.
+    struct IterationResources {
+      std::unique_ptr<PjRtLoadedExecutable> exe;
+      std::unique_ptr<HloModule> module;
+      std::vector<std::vector<Literal>> fake_args;
+      std::vector<std::vector<LiteralSlice>> fake_arg_slices;
+      std::vector<absl::Span<const LiteralSlice>> exec_args;
+    };
 
-    // Generate fake arguments for each device.
-    TF_ASSERT_OK_AND_ASSIGN(auto fake_args, MakeFakeArgumentsForDevices(module.get(), 2));
-    auto fake_arg_slices = MakeFakeArgumentSlices(fake_args);
-    std::vector<absl::Span<const LiteralSlice>> exec_args = MakeInnerSpan(fake_arg_slices);
+    // Prepare a fresh executable and fake arguments for each iteration while
+    // keeping the parsed module alive for the lifetime of the executable.
+    auto prepare_fn = [&]() -> absl::StatusOr<IterationResources> {
+      IterationResources res;
+      TF_ASSIGN_OR_RETURN(res.module, ParseHloText(hlo_string));
+      TF_ASSIGN_OR_RETURN(res.fake_args, MakeFakeArgumentsForDevices(res.module.get(), 2));
+      res.fake_arg_slices = MakeFakeArgumentSlices(res.fake_args);
+      res.exec_args = MakeInnerSpan(res.fake_arg_slices);
+      TF_ASSIGN_OR_RETURN(res.exe, Compile(res.module.get(), {2, 1}));
+      return res;
+    };
 
     if (!measure_performance_) {
       gpu::ConcurrencyTracer tracer;
@@ -96,10 +113,10 @@ protected:
       exec_opts.gpu_concurrency_tracer = &tracer;
       exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
 
-      // Execute
-      TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, exec_args, exec_opts));
+      TF_ASSERT_OK_AND_ASSIGN(auto res, prepare_fn());
+      auto &exe = res.exe;
+      TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, exec_opts));
 
-      // Print compiled thunks
       xla_test_util::print_gpu_thunk_info(exe.get());
       auto races = tracer.DetectDataRaces();
       std::cout << "races=" << races.size() << std::endl;
@@ -108,51 +125,134 @@ protected:
       }
       tracer.PrintTraces(std::cout);
       ASSERT_EQ(races.empty(), !expect_race);
+      exe->Delete();
     } else {
+      // Retrieve warmup iterations from env if provided.
+      if (const char *env = getenv("XLA_TRACER_WARMUP")) {
+        warmup_iters = std::stoi(env);
+      }
+
+      std::vector<double> base_times;
+      std::vector<size_t> base_memory;
+      std::vector<double> traced_times;
+      std::vector<size_t> traced_memory;
+      std::vector<size_t> tracer_memory;
+
       ExecuteOptions base_opts;
       base_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
-      size_t rss_before_base = GetCurrentRSSBytes();
-      absl::Time t0 = absl::Now();
-      TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, exec_args, base_opts));
-      absl::Time t1 = absl::Now();
-      size_t rss_after_base = GetCurrentRSSBytes();
-      double base_ms = absl::ToDoubleMilliseconds(t1 - t0);
-      size_t base_delta = rss_after_base - rss_before_base;
 
-      gpu::ConcurrencyTracer tracer;
-      ExecuteOptions exec_opts;
-      exec_opts.gpu_concurrency_tracer = &tracer;
-      exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
-      size_t rss_before_traced = GetCurrentRSSBytes();
-      absl::Time t2 = absl::Now();
-      TF_ASSERT_OK_AND_ASSIGN(auto outs_tr, Execute(*exe, exec_args, exec_opts));
-      absl::Time t3 = absl::Now();
-      size_t rss_after_traced = GetCurrentRSSBytes();
-      double traced_ms = absl::ToDoubleMilliseconds(t3 - t2);
-      size_t traced_delta = rss_after_traced - rss_before_traced;
-
-      xla_test_util::print_gpu_thunk_info(exe.get());
-      auto races = tracer.DetectDataRaces();
-      std::cout << "races=" << races.size() << std::endl;
-      if (!races.empty()) {
-        tracer.PrintDataRaces(std::cout);
+      // Warm up baseline runs.
+      for (int i = 0; i < warmup_iters; ++i) {
+        TF_ASSERT_OK_AND_ASSIGN(auto res, prepare_fn());
+        auto &exe = res.exe;
+        TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, base_opts));
+        exe->Delete();
       }
-      tracer.PrintTraces(std::cout);
-      ASSERT_EQ(races.empty(), !expect_race);
 
-      std::cout << "Baseline execution time (ms): " << base_ms << std::endl;
-      std::cout << "Traced execution time (ms): " << traced_ms << std::endl;
-      std::cout << "Execution time overhead (ms): " << traced_ms - base_ms << std::endl;
-      std::cout << "Baseline memory delta (bytes): " << base_delta << std::endl;
-      std::cout << "Traced memory delta (bytes): " << traced_delta << std::endl;
-      std::cout << "Tracer memory usage (bytes): " << tracer.GetApproximateMemoryUsage() << std::endl;
+      for (int i = 0; i < measure_iters; ++i) {
+        TF_ASSERT_OK_AND_ASSIGN(auto res, prepare_fn());
+        auto &exe = res.exe;
+        size_t rss_before = GetCurrentRSSBytes();
+        absl::Time t0 = absl::Now();
+        TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, base_opts));
+        absl::Time t1 = absl::Now();
+        size_t rss_after = GetCurrentRSSBytes();
+        base_times.push_back(absl::ToDoubleMilliseconds(t1 - t0));
+        base_memory.push_back(rss_after - rss_before);
+        exe->Delete();
+      }
+
+      // Warm up traced runs.
+      for (int i = 0; i < warmup_iters; ++i) {
+        TF_ASSERT_OK_AND_ASSIGN(auto res, prepare_fn());
+        auto &exe = res.exe;
+        gpu::ConcurrencyTracer tracer;
+        ExecuteOptions exec_opts;
+        exec_opts.gpu_concurrency_tracer = &tracer;
+        exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
+        TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, exec_opts));
+        auto races = tracer.DetectDataRaces();
+        ASSERT_EQ(races.empty(), !expect_race);
+        exe->Delete();
+      }
+
+      for (int i = 0; i < measure_iters; ++i) {
+        TF_ASSERT_OK_AND_ASSIGN(auto res, prepare_fn());
+        auto &exe = res.exe;
+        gpu::ConcurrencyTracer tracer;
+        ExecuteOptions exec_opts;
+        exec_opts.gpu_concurrency_tracer = &tracer;
+        exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
+        size_t rss_before = GetCurrentRSSBytes();
+        absl::Time t0 = absl::Now();
+        TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, exec_opts));
+        absl::Time t1 = absl::Now();
+        size_t rss_after = GetCurrentRSSBytes();
+        traced_times.push_back(absl::ToDoubleMilliseconds(t1 - t0));
+        traced_memory.push_back(rss_after - rss_before);
+        tracer_memory.push_back(tracer.GetApproximateMemoryUsage());
+        auto races = tracer.DetectDataRaces();
+        ASSERT_EQ(races.empty(), !expect_race);
+        exe->Delete();
+      }
+
+      auto mean_std_err = [](const std::vector<double> &vals) {
+        double mean = 0.0;
+        for (double v : vals)
+          mean += v;
+        mean /= vals.size();
+        double var = 0.0;
+        for (double v : vals)
+          var += (v - mean) * (v - mean);
+        double stddev = std::sqrt(var / (vals.size() > 1 ? vals.size() - 1 : 1));
+        double stderr = stddev / std::sqrt(vals.size());
+        return std::pair<double, double>(mean, stderr);
+      };
+
+      auto mean_std_err_size = [&mean_std_err](const std::vector<size_t> &vals) {
+        std::vector<double> tmp(vals.begin(), vals.end());
+        return mean_std_err(tmp);
+      };
+
+      auto [base_mean, base_err] = mean_std_err(base_times);
+      auto [base_mem_mean, base_mem_err] = mean_std_err_size(base_memory);
+      auto [traced_mean, traced_err] = mean_std_err(traced_times);
+      auto [traced_mem_mean, traced_mem_err] = mean_std_err_size(traced_memory);
+      auto [tracer_mem_mean, tracer_mem_err] = mean_std_err_size(tracer_memory);
+
+      std::ostringstream os;
+      os << "{\n";
+      os << "  \"warmup_iterations\": " << warmup_iters << ",\n";
+      os << "  \"measure_iterations\": " << measure_iters << ",\n";
+      os << "  \"baseline\": {\n";
+      os << "    \"avg_execution_time_ms\": " << base_mean << ",\n";
+      os << "    \"stderr_execution_time_ms\": " << base_err << ",\n";
+      os << "    \"avg_memory_delta_bytes\": " << base_mem_mean << ",\n";
+      os << "    \"stderr_memory_delta_bytes\": " << base_mem_err << "\n";
+      os << "  },\n";
+      os << "  \"traced\": {\n";
+      os << "    \"avg_execution_time_ms\": " << traced_mean << ",\n";
+      os << "    \"stderr_execution_time_ms\": " << traced_err << ",\n";
+      os << "    \"avg_memory_delta_bytes\": " << traced_mem_mean << ",\n";
+      os << "    \"stderr_memory_delta_bytes\": " << traced_mem_err << ",\n";
+      os << "    \"avg_tracer_memory_usage_bytes\": " << tracer_mem_mean << ",\n";
+      os << "    \"stderr_tracer_memory_usage_bytes\": " << tracer_mem_err << "\n";
+      os << "  }\n";
+      os << "}";
+      std::cout << os.str() << std::endl;
     }
+  }
+
+  absl::StatusOr<ExeWithModule> CompileWithModule(const std::string_view hlo_string, const DeviceMesh &mesh, DebugOptions *debug_options = nullptr) {
+    TF_ASSIGN_OR_RETURN(auto module, ParseHloText(hlo_string));
+    TF_ASSIGN_OR_RETURN(auto exe, Compile(module.get(), mesh, debug_options));
+    return ExeWithModule(std::move(exe), std::move(module));
   }
 
   absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> Compile(const std::string_view hlo_string, const DeviceMesh &mesh,
                                                                 DebugOptions *debug_options = nullptr) {
-    TF_ASSIGN_OR_RETURN(const auto module, ParseHloText(hlo_string));
-    return Compile(module.get(), mesh, debug_options);
+    TF_ASSIGN_OR_RETURN(auto pair, CompileWithModule(hlo_string, mesh, debug_options));
+    return std::move(pair.first);
   }
 
   absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> Compile(HloModule *module, const DeviceMesh &mesh, DebugOptions *debug_options = nullptr) {
@@ -293,7 +393,8 @@ ENTRY entry {
 )";
   DebugOptions debug_options = GetDebugOptionsForTest();
   debug_options.set_xla_latency_hiding_scheduler_synthetic_remove_control_deps(true);
-  TF_ASSERT_OK_AND_ASSIGN(auto exe, Compile(hlo_string, {2, 1}, &debug_options));
+  TF_ASSERT_OK_AND_ASSIGN(auto exe_with_module, CompileWithModule(hlo_string, {2, 1}, &debug_options));
+  auto &exe = exe_with_module.first;
 
   // ---------------- host data -------------------------------------------- //
   Literal mat = LiteralUtil::CreateFull({8}, static_cast<bfloat16>(1.0f));
