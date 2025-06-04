@@ -82,7 +82,8 @@ protected:
     ASSERT_EQ(races.empty(), !expect_race);
   }
 
-  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> Compile(const std::string_view hlo_string, const DeviceMesh &mesh, DebugOptions *debug_options = nullptr) {
+  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> Compile(const std::string_view hlo_string, const DeviceMesh &mesh,
+                                                                DebugOptions *debug_options = nullptr) {
     TF_ASSIGN_OR_RETURN(const auto module, ParseHloText(hlo_string));
     return Compile(module.get(), mesh, debug_options);
   }
@@ -624,9 +625,9 @@ ENTRY %module {
 //           false);
 // }
 
-
 // invalid layout
-//2025-06-03 18:56:14.631219: F ./xla/shape.h:203] Check failed: has_layout() element_type: F32 dimensions: 2 dimensions: 4 dimensions: 128 is_dynamic_dimension: false is_dynamic_dimension: false is_dynamic_dimension: false
+// 2025-06-03 18:56:14.631219: F ./xla/shape.h:203] Check failed: has_layout() element_type: F32 dimensions: 2 dimensions: 4 dimensions: 128
+// is_dynamic_dimension: false is_dynamic_dimension: false is_dynamic_dimension: false
 // XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, InplaceUpdateCPTest) {
 //   RunTest(R"(
 //         HloModule module, is_scheduled=false
@@ -637,7 +638,8 @@ ENTRY %module {
 //   %broadcast.2 = f32[2,4,128]{2,1,0:T(4,128)} broadcast(f32[]{:T(128)} %constant.15), dimensions={}
 //   %param_1.2 = u32[] parameter(1)
 //   %constant.14 = u32[] constant(0)
-//   ROOT %dynamic-update-slice.1 = f32[4,4,128]{2,1,0:T(4,128)} dynamic-update-slice(f32[4,4,128]{2,1,0:T(4,128)} %param_0.1, f32[2,4,128]{2,1,0:T(4,128)} %broadcast.2, u32[] %param_1.2, u32[] %constant.14, u32[] %constant.14)
+//   ROOT %dynamic-update-slice.1 = f32[4,4,128]{2,1,0:T(4,128)} dynamic-update-slice(f32[4,4,128]{2,1,0:T(4,128)} %param_0.1, f32[2,4,128]{2,1,0:T(4,128)}
+//   %broadcast.2, u32[] %param_1.2, u32[] %constant.14, u32[] %constant.14)
 // }
 //
 // ENTRY %module_spmd () -> f32[4,4,128] {
@@ -647,49 +649,53 @@ ENTRY %module {
 //   %tuple = (u32[], u32[], u32[]) tuple(u32[] %constant.5, u32[] %constant.8, u32[] %constant.8)
 //   %custom-call = f32[4,4,128]{2,1,0:T(4,128)} custom-call(), custom_call_target="AllocateBuffer"
 //   %fusion.1 = f32[4,4,128]{2,1,0:T(4,128)} fusion(f32[4,4,128]{2,1,0:T(4,128)} %custom-call, u32[] %constant.5), kind=kLoop, calls=%fused_computation.1
-//   %collective-permute = f32[4,4,128]{2,1,0:T(4,128)} collective-permute(f32[4,4,128]{2,1,0:T(4,128)} %fusion.1, f32[4,4,128]{2,1,0:T(4,128)} %fusion.1, (u32[], u32[], u32[]) %tuple, (u32[], u32[], u32[]) %tuple.1), channel_id=958, source_target_pairs={{0,1},{1,0}}, slice_sizes={{2,4,128}}, backend_config="{}"
-//   ROOT %copy.3 = f32[4,4,128]{2,1,0:T(4,128)} copy(f32[4,4,128]{2,1,0:T(4,128)} %collective-permute)
+//   %collective-permute = f32[4,4,128]{2,1,0:T(4,128)} collective-permute(f32[4,4,128]{2,1,0:T(4,128)} %fusion.1, f32[4,4,128]{2,1,0:T(4,128)} %fusion.1,
+//   (u32[], u32[], u32[]) %tuple, (u32[], u32[], u32[]) %tuple.1), channel_id=958, source_target_pairs={{0,1},{1,0}}, slice_sizes={{2,4,128}},
+//   backend_config="{}" ROOT %copy.3 = f32[4,4,128]{2,1,0:T(4,128)} copy(f32[4,4,128]{2,1,0:T(4,128)} %collective-permute)
 // }
 //         )",
 //           false);
 // }
 
-//INVALID_ARGUMENT: layout minor_to_major field contains 2 elements, but shape is rank 3: {1, 0}; shape: element_type: F32 dimensions: 33712 dimensions: 8 dimensions: 128 layout { minor_to_major: 2 minor_to_major: 1 minor_to_major: 0 tiles { dimensions: 8 dimensions: 128 } tail_padding_alignment_in_elements: 1 } is_dynamic_dimension: false is_dynamic_dimension: false is_dynamic_dimension: false
-// XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, InplaceUpdateCPTest2) {
-//   RunTest(R"(
-//         HloModule module, is_scheduled=false
+// INVALID_ARGUMENT: layout minor_to_major field contains 2 elements, but shape is rank 3: {1, 0}; shape: element_type: F32 dimensions: 33712 dimensions: 8
+// dimensions: 128 layout { minor_to_major: 2 minor_to_major: 1 minor_to_major: 0 tiles { dimensions: 8 dimensions: 128 } tail_padding_alignment_in_elements: 1
+// } is_dynamic_dimension: false is_dynamic_dimension: false is_dynamic_dimension: false
+//  XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, InplaceUpdateCPTest2) {
+//    RunTest(R"(
+//          HloModule module, is_scheduled=false
 //
-// %sum (x.336: f32[], y.336: f32[]) -> f32[] {
-//   %x.336 = f32[]{:T(128)} parameter(0)
-//   %y.336 = f32[]{:T(128)} parameter(1)
-//   ROOT %add.5252 = f32[]{:T(128)} add(f32[]{:T(128)} %x.336, f32[]{:T(128)} %y.336)
-// }
+//  %sum (x.336: f32[], y.336: f32[]) -> f32[] {
+//    %x.336 = f32[]{:T(128)} parameter(0)
+//    %y.336 = f32[]{:T(128)} parameter(1)
+//    ROOT %add.5252 = f32[]{:T(128)} add(f32[]{:T(128)} %x.336, f32[]{:T(128)} %y.336)
+//  }
 //
-// ENTRY %module () -> f32[33708,1024] {
-//   %constant.19 = u32[] constant(0)
-//   %replica_id = u32[]{:T(128)} replica-id()
-//   %convert = f32[]{:T(128)} convert(u32[]{:T(128)} %replica_id)
-//   %color_operand.1 = f32[2128,8,128]{2,1,0:T(8,128)} broadcast(f32[]{:T(128)} %convert), dimensions={}
-//   %all-gather.1 = f32[4256,8,128]{2,1,0:T(8,128)} all-gather(f32[2128,8,128]{2,1,0:T(8,128)} %color_operand.1), replica_groups={{0,1}}, dimensions={0}
-//   %custom-call = f32[33712,8,128]{2,1,0:T(8,128)} custom-call(), custom_call_target="AllocateBuffer"
-//   %dynamic-update-slice = f32[33712,8,128]{2,1,0:T(8,128)} dynamic-update-slice(f32[33712,8,128]{2,1,0:T(8,128)} %custom-call, f32[4256,8,128]{2,1,0:T(8,128)} %all-gather.1, u32[] %constant.19, u32[] %constant.19, u32[] %constant.19)
-//   %tuple.7 = (u32[], u32[], u32[]) tuple(u32[] %constant.19, u32[] %constant.19, u32[] %constant.19)
-//   %constant.20 = u32[] constant(4256)
-//   %tuple.8 = (u32[], u32[], u32[]) tuple(u32[] %constant.20, u32[] %constant.19, u32[] %constant.19)
-//   %collective-permute.3 = f32[33712,8,128]{2,1,0:T(8,128)} collective-permute(f32[33712,8,128]{2,1,0:T(8,128)} %dynamic-update-slice, f32[33712,8,128]{2,1,0:T(8,128)} %dynamic-update-slice, (u32[], u32[], u32[]) %tuple.7, (u32[], u32[], u32[]) %tuple.8), source_target_pairs={{0,1},{1,0}}, slice_sizes={{4256,8,128}}
-//   %tuple.9 = (u32[], u32[], u32[]) tuple(u32[] %constant.20, u32[] %constant.19, u32[] %constant.19)
-//   %constant.21 = u32[] constant(8512)
-//   %tuple.10 = (u32[], u32[], u32[]) tuple(u32[] %constant.21, u32[] %constant.19, u32[] %constant.19)
-//   %collective-permute.4 = f32[33712,8,128]{2,1,0:T(8,128)} collective-permute(f32[33712,8,128]{2,1,0:T(8,128)} %collective-permute.3, f32[33712,8,128]{2,1,0:T(8,128)} %collective-permute.3, (u32[], u32[], u32[]) %tuple.9, (u32[], u32[], u32[]) %tuple.10), source_target_pairs={{0,1},{1,0}}, slice_sizes={{4256,8,128}}
-//   %tuple.11 = (u32[], u32[], u32[]) tuple(u32[] %constant.21, u32[] %constant.19, u32[] %constant.19)
-//   %constant.22 = u32[] constant(12768)
-//   %tuple.12 = (u32[], u32[], u32[]) tuple(u32[] %constant.22, u32[] %constant.19, u32[] %constant.19)
-//   %collective-permute.5 = f32[33712,8,128]{2,1,0:T(8,128)} collective-permute(f32[33712,8,128]{2,1,0:T(8,128)} %collective-permute.4, f32[33712,8,128]{2,1,0:T(8,128)} %collective-permute.4, (u32[], u32[], u32[]) %tuple.11, (u32[], u32[], u32[]) %tuple.12), source_target_pairs={{0,1},{1,0}}, slice_sizes={{4256,8,128}}
-//   ROOT %bitcast.16 = f32[33708,1024]{1,0:T(8,128)} bitcast(f32[33712,8,128]{2,1,0:T(8,128)} %collective-permute.5)
-// }
-//         )",
-//           false);
-// }
+//  ENTRY %module () -> f32[33708,1024] {
+//    %constant.19 = u32[] constant(0)
+//    %replica_id = u32[]{:T(128)} replica-id()
+//    %convert = f32[]{:T(128)} convert(u32[]{:T(128)} %replica_id)
+//    %color_operand.1 = f32[2128,8,128]{2,1,0:T(8,128)} broadcast(f32[]{:T(128)} %convert), dimensions={}
+//    %all-gather.1 = f32[4256,8,128]{2,1,0:T(8,128)} all-gather(f32[2128,8,128]{2,1,0:T(8,128)} %color_operand.1), replica_groups={{0,1}}, dimensions={0}
+//    %custom-call = f32[33712,8,128]{2,1,0:T(8,128)} custom-call(), custom_call_target="AllocateBuffer"
+//    %dynamic-update-slice = f32[33712,8,128]{2,1,0:T(8,128)} dynamic-update-slice(f32[33712,8,128]{2,1,0:T(8,128)} %custom-call,
+//    f32[4256,8,128]{2,1,0:T(8,128)} %all-gather.1, u32[] %constant.19, u32[] %constant.19, u32[] %constant.19) %tuple.7 = (u32[], u32[], u32[]) tuple(u32[]
+//    %constant.19, u32[] %constant.19, u32[] %constant.19) %constant.20 = u32[] constant(4256) %tuple.8 = (u32[], u32[], u32[]) tuple(u32[] %constant.20, u32[]
+//    %constant.19, u32[] %constant.19) %collective-permute.3 = f32[33712,8,128]{2,1,0:T(8,128)} collective-permute(f32[33712,8,128]{2,1,0:T(8,128)}
+//    %dynamic-update-slice, f32[33712,8,128]{2,1,0:T(8,128)} %dynamic-update-slice, (u32[], u32[], u32[]) %tuple.7, (u32[], u32[], u32[]) %tuple.8),
+//    source_target_pairs={{0,1},{1,0}}, slice_sizes={{4256,8,128}} %tuple.9 = (u32[], u32[], u32[]) tuple(u32[] %constant.20, u32[] %constant.19, u32[]
+//    %constant.19) %constant.21 = u32[] constant(8512) %tuple.10 = (u32[], u32[], u32[]) tuple(u32[] %constant.21, u32[] %constant.19, u32[] %constant.19)
+//    %collective-permute.4 = f32[33712,8,128]{2,1,0:T(8,128)} collective-permute(f32[33712,8,128]{2,1,0:T(8,128)} %collective-permute.3,
+//    f32[33712,8,128]{2,1,0:T(8,128)} %collective-permute.3, (u32[], u32[], u32[]) %tuple.9, (u32[], u32[], u32[]) %tuple.10),
+//    source_target_pairs={{0,1},{1,0}}, slice_sizes={{4256,8,128}} %tuple.11 = (u32[], u32[], u32[]) tuple(u32[] %constant.21, u32[] %constant.19, u32[]
+//    %constant.19) %constant.22 = u32[] constant(12768) %tuple.12 = (u32[], u32[], u32[]) tuple(u32[] %constant.22, u32[] %constant.19, u32[] %constant.19)
+//    %collective-permute.5 = f32[33712,8,128]{2,1,0:T(8,128)} collective-permute(f32[33712,8,128]{2,1,0:T(8,128)} %collective-permute.4,
+//    f32[33712,8,128]{2,1,0:T(8,128)} %collective-permute.4, (u32[], u32[], u32[]) %tuple.11, (u32[], u32[], u32[]) %tuple.12),
+//    source_target_pairs={{0,1},{1,0}}, slice_sizes={{4256,8,128}} ROOT %bitcast.16 = f32[33708,1024]{1,0:T(8,128)} bitcast(f32[33712,8,128]{2,1,0:T(8,128)}
+//    %collective-permute.5)
+//  }
+//          )",
+//            false);
+//  }
 
 // XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, TwoCollectivePermuteTypesOverlap) {
 //   RunTest(R"(
@@ -816,7 +822,10 @@ ENTRY entry {
 
 // Device configuration error?
 // https://chatgpt.com/c/68404f9e-60e4-8007-805a-75bf29901924
-//INTERNAL: NCCL operation ncclRecv( recv_buffer.opaque(), ToNcclCount(dtype, count), nccl_dtype, source_rank->value(), comm_, se::gpu::AsGpuStreamValue(stream)) failed: invalid argument (run with NCCL_DEBUG=WARN for details). Last NCCL warning(error) log entry (may be unrelated) 'Recv : invalid root 1 (root should be in the 0..1 range)'.: while running replica 0 and partition 0 of a replicated computation (other replicas may have failed as well).
+// INTERNAL: NCCL operation ncclRecv( recv_buffer.opaque(), ToNcclCount(dtype, count), nccl_dtype, source_rank->value(), comm_,
+// se::gpu::AsGpuStreamValue(stream)) failed: invalid argument (run with NCCL_DEBUG=WARN for details). Last NCCL warning(error) log entry (may be unrelated)
+// 'Recv : invalid root 1 (root should be in the 0..1 range)'.: while running replica 0 and partition 0 of a replicated computation (other replicas may have
+// failed as well).
 // XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests,
 //            ExistingSingleCollectivePermuteAsyncSmallTest) {
 //   RunTest(R"(
@@ -880,7 +889,8 @@ ENTRY entry {
 //   RunTest(R"(
 //         HloModule module, is_scheduled=false
 //
-// %fused_computation.1793 (param_0.4944: s32[16], param_1.5648: u32[], param_2.3959: u32[], param_3.3338: u32[], param_4.2302: u32[]) -> (s32[1], s32[1], s32[1], s32[1]) {
+// %fused_computation.1793 (param_0.4944: s32[16], param_1.5648: u32[], param_2.3959: u32[], param_3.3338: u32[], param_4.2302: u32[]) -> (s32[1], s32[1],
+// s32[1], s32[1]) {
 //   %param_0.4944 = s32[16]{0:T(128)} parameter(0)
 //   %param_1.5648 = u32[]{:T(128)} parameter(1)
 //   %dynamic-slice.1806 = s32[1]{0:T(128)} dynamic-slice(s32[16]{0:T(128)} %param_0.4944, u32[]{:T(128)} %param_1.5648), dynamic_slice_sizes={1}
@@ -890,7 +900,8 @@ ENTRY entry {
 //   %dynamic-slice.1808 = s32[1]{0:T(128)} dynamic-slice(s32[16]{0:T(128)} %param_0.4944, u32[]{:T(128)} %param_3.3338), dynamic_slice_sizes={1}
 //   %param_4.2302 = u32[]{:T(128)} parameter(4)
 //   %dynamic-slice.1809 = s32[1]{0:T(128)} dynamic-slice(s32[16]{0:T(128)} %param_0.4944, u32[]{:T(128)} %param_4.2302), dynamic_slice_sizes={1}
-//   ROOT %tuple.1384 = (s32[1]{0:T(128)}, s32[1]{0:T(128)}, s32[1]{0:T(128)}, s32[1]{0:T(128)}) tuple(s32[1]{0:T(128)} %dynamic-slice.1806, s32[1]{0:T(128)} %dynamic-slice.1807, s32[1]{0:T(128)} %dynamic-slice.1808, s32[1]{0:T(128)} %dynamic-slice.1809)
+//   ROOT %tuple.1384 = (s32[1]{0:T(128)}, s32[1]{0:T(128)}, s32[1]{0:T(128)}, s32[1]{0:T(128)}) tuple(s32[1]{0:T(128)} %dynamic-slice.1806, s32[1]{0:T(128)}
+//   %dynamic-slice.1807, s32[1]{0:T(128)} %dynamic-slice.1808, s32[1]{0:T(128)} %dynamic-slice.1809)
 // }
 //
 // %fused_computation.109 (param_0.225: bf16[8,1024,1,20,256,1,1]) -> bf16[8,1024,1,20,256,1,1,1] {
@@ -901,32 +912,42 @@ ENTRY entry {
 // %fused_computation.110.clone (param_0.251: s32[], param_1.277: bf16[1,20,256,1,16,4,288,1], param_2.190: s32[]) -> bf16[1,20,256,2,1,4,288,1] {
 //   %param_1.277 = bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} parameter(1)
 //   %constant.6014 = bf16[]{:T(256)} constant(-inf)
-//   %pad.370 = bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} pad(bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %param_1.277, bf16[]{:T(256)} %constant.6014), padding=0_0x0_0x0_0x0_1x0_0x0_0x0_0x0_0
-//   %constant.6004 = s32[]{:T(128)} constant(0)
-//   %param_0.251 = s32[]{:T(128)} parameter(0)
-//   %dynamic-slice.1503 = bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} dynamic-slice(bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %pad.370, s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004, /*index=5*/s32[]{:T(128)} %param_0.251, s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004), dynamic_slice_sizes={1,20,256,2,1,4,288,1}
-//   %pad.369 = bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} pad(bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %param_1.277, bf16[]{:T(256)} %constant.6014), padding=0_0x0_0x0_0x1_0x0_0x0_0x0_0x0_0
-//   %param_2.190 = s32[]{:T(128)} parameter(2)
-//   %dynamic-slice.1502 = bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} dynamic-slice(bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %pad.369, s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004, /*index=5*/s32[]{:T(128)} %param_2.190, s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004), dynamic_slice_sizes={1,20,256,2,1,4,288,1}
-//   ROOT %maximum.513 = bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} maximum(bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %dynamic-slice.1503, bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %dynamic-slice.1502)
+//   %pad.370 = bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} pad(bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %param_1.277,
+//   bf16[]{:T(256)} %constant.6014), padding=0_0x0_0x0_0x0_1x0_0x0_0x0_0x0_0 %constant.6004 = s32[]{:T(128)} constant(0) %param_0.251 = s32[]{:T(128)}
+//   parameter(0) %dynamic-slice.1503 = bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)}
+//   dynamic-slice(bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %pad.370, s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004,
+//   s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004, /*index=5*/s32[]{:T(128)} %param_0.251, s32[]{:T(128)} %constant.6004, s32[]{:T(128)}
+//   %constant.6004, s32[]{:T(128)} %constant.6004), dynamic_slice_sizes={1,20,256,2,1,4,288,1} %pad.369 =
+//   bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} pad(bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %param_1.277, bf16[]{:T(256)}
+//   %constant.6014), padding=0_0x0_0x0_0x1_0x0_0x0_0x0_0x0_0 %param_2.190 = s32[]{:T(128)} parameter(2) %dynamic-slice.1502 =
+//   bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} dynamic-slice(bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %pad.369, s32[]{:T(128)}
+//   %constant.6004, s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004, /*index=5*/s32[]{:T(128)} %param_2.190,
+//   s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004, s32[]{:T(128)} %constant.6004), dynamic_slice_sizes={1,20,256,2,1,4,288,1} ROOT %maximum.513
+//   = bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} maximum(bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %dynamic-slice.1503,
+//   bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %dynamic-slice.1502)
 // }
 //
-// %fused_computation.108 (param_0.235: bf16[8,1024,1,20,256,1,1], param_1.276: s32[], param_2.187: bf16[1,20,256,1,16,4,288,1], param_3.145: s32[]) -> bf16[2,1,4,288,8,1024,1,1] {
+// %fused_computation.108 (param_0.235: bf16[8,1024,1,20,256,1,1], param_1.276: s32[], param_2.187: bf16[1,20,256,1,16,4,288,1], param_3.145: s32[]) ->
+// bf16[2,1,4,288,8,1024,1,1] {
 //   %param_1.276 = s32[]{:T(128)} parameter(1)
 //   %param_2.187 = bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} parameter(2)
 //   %param_3.145 = s32[]{:T(128)} parameter(3)
-//   %fusion.132 = bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} fusion(s32[]{:T(128)} %param_1.276, bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %param_2.187, s32[]{:T(128)} %param_3.145), kind=kLoop, calls=%fused_computation.110.clone
+//   %fusion.132 = bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} fusion(s32[]{:T(128)} %param_1.276,
+//   bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %param_2.187, s32[]{:T(128)} %param_3.145), kind=kLoop, calls=%fused_computation.110.clone
 //   %param_0.235 = bf16[8,1024,1,20,256,1,1]{4,1,3,0,6,5,2:T(8,128)(2,1)} parameter(0)
-//   %fusion.129 = bf16[8,1024,1,20,256,1,1,1]{4,1,7,3,2,0,6,5:T(8,128)(2,1)} fusion(bf16[8,1024,1,20,256,1,1]{4,1,3,0,6,5,2:T(8,128)(2,1)} %param_0.235), kind=kLoop, calls=%fused_computation.109
-//   ROOT %convolution.170 = bf16[2,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} convolution(bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %fusion.132, bf16[8,1024,1,20,256,1,1,1]{4,1,7,3,2,0,6,5:T(8,128)(2,1)} %fusion.129), window={size=1x1x8x1x20x1 pad=0_0x0_0x7_7x0_0x0_0x0_0 rhs_reversal=0x0x1x0x0x0}, dim_labels=34f501b2_2o34i015->501b2f34
+//   %fusion.129 = bf16[8,1024,1,20,256,1,1,1]{4,1,7,3,2,0,6,5:T(8,128)(2,1)} fusion(bf16[8,1024,1,20,256,1,1]{4,1,3,0,6,5,2:T(8,128)(2,1)} %param_0.235),
+//   kind=kLoop, calls=%fused_computation.109 ROOT %convolution.170 = bf16[2,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)}
+//   convolution(bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %fusion.132, bf16[8,1024,1,20,256,1,1,1]{4,1,7,3,2,0,6,5:T(8,128)(2,1)} %fusion.129),
+//   window={size=1x1x8x1x20x1 pad=0_0x0_0x7_7x0_0x0_0x0_0 rhs_reversal=0x0x1x0x0x0}, dim_labels=34f501b2_2o34i015->501b2f34
 // }
 //
 // %fused_computation.117 (param_0.248: bf16[1,4,288,8,1024,1,1], param_1.273: bf16[2,1,4,288,8,1024,1,1]) -> bf16[1,4,288,8,1024,1,1] {
 //   %param_0.248 = bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)} parameter(0)
 //   %param_1.273 = bf16[2,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} parameter(1)
-//   %slice.1252 = bf16[1,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} slice(bf16[2,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} %param_1.273), slice={[0:1], [0:1], [0:4], [0:288], [0:8], [0:1024], [0:1], [0:1]}
-//   %bitcast.719 = bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)} bitcast(bf16[1,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} %slice.1252)
-//   ROOT %add.3083 = bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)} add(bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)} %param_0.248, bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)} %bitcast.719)
+//   %slice.1252 = bf16[1,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} slice(bf16[2,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} %param_1.273),
+//   slice={[0:1], [0:1], [0:4], [0:288], [0:8], [0:1024], [0:1], [0:1]} %bitcast.719 = bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)}
+//   bitcast(bf16[1,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} %slice.1252) ROOT %add.3083 = bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)}
+//   add(bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)} %param_0.248, bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)} %bitcast.719)
 // }
 //
 // %fused_computation.107 (param_0.223: bf16[8,1024,1,20,256,1,1]) -> bf16[8,1024,1,20,256,1,1,1] {
@@ -937,46 +958,58 @@ ENTRY entry {
 // %fused_computation.111.clone (param_0.250: s32[], param_1.275: bf16[1,20,256,1,16,4,288,1], param_2.189: s32[]) -> bf16[1,20,256,2,1,4,288,1] {
 //   %param_1.275 = bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} parameter(1)
 //   %constant.6009 = bf16[]{:T(256)} constant(-inf)
-//   %pad.374 = bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} pad(bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %param_1.275, bf16[]{:T(256)} %constant.6009), padding=0_0x0_0x0_0x0_1x0_0x0_0x0_0x0_0
-//   %constant.5999 = s32[]{:T(128)} constant(0)
-//   %param_0.250 = s32[]{:T(128)} parameter(0)
-//   %dynamic-slice.1507 = bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} dynamic-slice(bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %pad.374, s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999, /*index=5*/s32[]{:T(128)} %param_0.250, s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999), dynamic_slice_sizes={1,20,256,2,1,4,288,1}
-//   %pad.373 = bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} pad(bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %param_1.275, bf16[]{:T(256)} %constant.6009), padding=0_0x0_0x0_0x1_0x0_0x0_0x0_0x0_0
-//   %param_2.189 = s32[]{:T(128)} parameter(2)
-//   %dynamic-slice.1506 = bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} dynamic-slice(bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %pad.373, s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999, /*index=5*/s32[]{:T(128)} %param_2.189, s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999), dynamic_slice_sizes={1,20,256,2,1,4,288,1}
-//   ROOT %maximum.514 = bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} maximum(bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %dynamic-slice.1507, bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %dynamic-slice.1506)
+//   %pad.374 = bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} pad(bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %param_1.275,
+//   bf16[]{:T(256)} %constant.6009), padding=0_0x0_0x0_0x0_1x0_0x0_0x0_0x0_0 %constant.5999 = s32[]{:T(128)} constant(0) %param_0.250 = s32[]{:T(128)}
+//   parameter(0) %dynamic-slice.1507 = bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)}
+//   dynamic-slice(bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %pad.374, s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999,
+//   s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999, /*index=5*/s32[]{:T(128)} %param_0.250, s32[]{:T(128)} %constant.5999, s32[]{:T(128)}
+//   %constant.5999, s32[]{:T(128)} %constant.5999), dynamic_slice_sizes={1,20,256,2,1,4,288,1} %pad.373 =
+//   bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} pad(bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %param_1.275, bf16[]{:T(256)}
+//   %constant.6009), padding=0_0x0_0x0_0x1_0x0_0x0_0x0_0x0_0 %param_2.189 = s32[]{:T(128)} parameter(2) %dynamic-slice.1506 =
+//   bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} dynamic-slice(bf16[1,20,256,2,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %pad.373, s32[]{:T(128)}
+//   %constant.5999, s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999, /*index=5*/s32[]{:T(128)} %param_2.189,
+//   s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999, s32[]{:T(128)} %constant.5999), dynamic_slice_sizes={1,20,256,2,1,4,288,1} ROOT %maximum.514
+//   = bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} maximum(bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %dynamic-slice.1507,
+//   bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %dynamic-slice.1506)
 // }
 //
-// %fused_computation.106 (param_0.239: bf16[8,1024,1,20,256,1,1], param_1.274: s32[], param_2.185: bf16[1,20,256,1,16,4,288,1], param_3.144: s32[]) -> bf16[2,1,4,288,8,1024,1,1] {
+// %fused_computation.106 (param_0.239: bf16[8,1024,1,20,256,1,1], param_1.274: s32[], param_2.185: bf16[1,20,256,1,16,4,288,1], param_3.144: s32[]) ->
+// bf16[2,1,4,288,8,1024,1,1] {
 //   %param_1.274 = s32[]{:T(128)} parameter(1)
 //   %param_2.185 = bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} parameter(2)
 //   %param_3.144 = s32[]{:T(128)} parameter(3)
-//   %fusion.133 = bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} fusion(s32[]{:T(128)} %param_1.274, bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %param_2.185, s32[]{:T(128)} %param_3.144), kind=kLoop, calls=%fused_computation.111.clone
+//   %fusion.133 = bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} fusion(s32[]{:T(128)} %param_1.274,
+//   bf16[1,20,256,1,16,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %param_2.185, s32[]{:T(128)} %param_3.144), kind=kLoop, calls=%fused_computation.111.clone
 //   %param_0.239 = bf16[8,1024,1,20,256,1,1]{4,1,3,0,6,5,2:T(8,128)(2,1)} parameter(0)
-//   %fusion.127 = bf16[8,1024,1,20,256,1,1,1]{4,1,7,3,2,0,6,5:T(8,128)(2,1)} fusion(bf16[8,1024,1,20,256,1,1]{4,1,3,0,6,5,2:T(8,128)(2,1)} %param_0.239), kind=kLoop, calls=%fused_computation.107
-//   ROOT %convolution.169 = bf16[2,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} convolution(bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %fusion.133, bf16[8,1024,1,20,256,1,1,1]{4,1,7,3,2,0,6,5:T(8,128)(2,1)} %fusion.127), window={size=1x1x8x1x20x1 pad=0_0x0_0x7_7x0_0x0_0x0_0 rhs_reversal=0x0x1x0x0x0}, dim_labels=34f501b2_2o34i015->501b2f34
+//   %fusion.127 = bf16[8,1024,1,20,256,1,1,1]{4,1,7,3,2,0,6,5:T(8,128)(2,1)} fusion(bf16[8,1024,1,20,256,1,1]{4,1,3,0,6,5,2:T(8,128)(2,1)} %param_0.239),
+//   kind=kLoop, calls=%fused_computation.107 ROOT %convolution.169 = bf16[2,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)}
+//   convolution(bf16[1,20,256,2,1,4,288,1]{2,6,3,1,0,7,5,4:T(8,128)(2,1)} %fusion.133, bf16[8,1024,1,20,256,1,1,1]{4,1,7,3,2,0,6,5:T(8,128)(2,1)} %fusion.127),
+//   window={size=1x1x8x1x20x1 pad=0_0x0_0x7_7x0_0x0_0x0_0 rhs_reversal=0x0x1x0x0x0}, dim_labels=34f501b2_2o34i015->501b2f34
 // }
 //
 // %fused_computation.115 (param_0.244: bf16[1,4,288,8,1024,1,1], param_1.270: bf16[2,1,4,288,8,1024,1,1]) -> bf16[1,4,288,8,1024,1,1] {
 //   %param_0.244 = bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)} parameter(0)
 //   %param_1.270 = bf16[2,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} parameter(1)
-//   %slice.1249 = bf16[1,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} slice(bf16[2,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} %param_1.270), slice={[0:1], [0:1], [0:4], [0:288], [0:8], [0:1024], [0:1], [0:1]}
-//   %bitcast.716 = bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)} bitcast(bf16[1,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} %slice.1249)
-//   ROOT %add.3082 = bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)} add(bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)} %param_0.244, bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)} %bitcast.716)
+//   %slice.1249 = bf16[1,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} slice(bf16[2,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} %param_1.270),
+//   slice={[0:1], [0:1], [0:4], [0:288], [0:8], [0:1024], [0:1], [0:1]} %bitcast.716 = bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)}
+//   bitcast(bf16[1,1,4,288,8,1024,1,1]{5,3,0,7,6,4,2,1:T(8,128)(2,1)} %slice.1249) ROOT %add.3082 = bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)}
+//   add(bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)} %param_0.244, bf16[1,4,288,8,1024,1,1]{4,2,3,1,6,5,0:T(8,128)(2,1)} %bitcast.716)
 // }
 //
 // %fused_computation.113 (param_0.241: bf16[1,4,288,8,1024,1,1], param_1.267: bf16[2,4,288,8,1024,1,1]) -> bf16[1,4,288,8,1024,1,1] {
 //   %param_0.241 = bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} parameter(0)
 //   %param_1.267 = bf16[2,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} parameter(1)
-//   %slice.1246 = bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} slice(bf16[2,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} %param_1.267), slice={[1:2], [0:4], [0:288], [0:8], [0:1024], [0:1], [0:1]}
-//   ROOT %add.3081 = bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} add(bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} %param_0.241, bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} %slice.1246)
+//   %slice.1246 = bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} slice(bf16[2,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} %param_1.267),
+//   slice={[1:2], [0:4], [0:288], [0:8], [0:1024], [0:1], [0:1]} ROOT %add.3081 = bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)}
+//   add(bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} %param_0.241, bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} %slice.1246)
 // }
 //
 // %fused_computation.112 (param_0.240: bf16[1,4,288,8,1024,1,1], param_1.265: bf16[2,4,288,8,1024,1,1]) -> bf16[1,4,288,8,1024,1,1] {
 //   %param_0.240 = bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} parameter(0)
 //   %param_1.265 = bf16[2,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} parameter(1)
-//   %slice.1245 = bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} slice(bf16[2,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} %param_1.265), slice={[1:2], [0:4], [0:288], [0:8], [0:1024], [0:1], [0:1]}
-//   ROOT %add.3080 = bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} add(bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} %param_0.240, bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} %slice.1245)
+//   %slice.1245 = bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} slice(bf16[2,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} %param_1.265),
+//   slice={[1:2], [0:4], [0:288], [0:8], [0:1024], [0:1], [0:1]} ROOT %add.3080 = bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)}
+//   add(bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} %param_0.240, bf16[1,4,288,8,1024,1,1]{4,2,0,3,1,6,5:T(8,128)(2,1)} %slice.1245)
 // }
 //         )",
 //           false);
@@ -1012,13 +1045,13 @@ ENTRY entry {
           false);
 }
 
-
 // OOM
 // XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BalanceChainedCollectivePermutesLoopedEinsum2) {
 //   RunTest(R"(
 //         HloModule module, is_scheduled=false
 //
-// %fused_computation.1851 (param_0.5170: s32[32], param_1.5848: u32[], param_2.4103: u32[], param_3.3513: u32[], param_4.2356: u32[]) -> (s32[1], s32[1], s32[1], s32[1]) {
+// %fused_computation.1851 (param_0.5170: s32[32], param_1.5848: u32[], param_2.4103: u32[], param_3.3513: u32[], param_4.2356: u32[]) -> (s32[1], s32[1],
+// s32[1], s32[1]) {
 //   %param_0.5170 = s32[32]{0:T(128)} parameter(0)
 //   %param_1.5848 = u32[]{:T(128)} parameter(1)
 //   %dynamic-slice.1636 = s32[1]{0:T(128)} dynamic-slice(s32[32]{0:T(128)} %param_0.5170, u32[]{:T(128)} %param_1.5848), dynamic_slice_sizes={1}
@@ -1028,7 +1061,8 @@ ENTRY entry {
 //   %dynamic-slice.1638 = s32[1]{0:T(128)} dynamic-slice(s32[32]{0:T(128)} %param_0.5170, u32[]{:T(128)} %param_3.3513), dynamic_slice_sizes={1}
 //   %param_4.2356 = u32[]{:T(128)} parameter(4)
 //   %dynamic-slice.1639 = s32[1]{0:T(128)} dynamic-slice(s32[32]{0:T(128)} %param_0.5170, u32[]{:T(128)} %param_4.2356), dynamic_slice_sizes={1}
-//   ROOT %tuple.1297 = (s32[1]{0:T(128)}, s32[1]{0:T(128)}, s32[1]{0:T(128)}, s32[1]{0:T(128)}) tuple(s32[1]{0:T(128)} %dynamic-slice.1636, s32[1]{0:T(128)} %dynamic-slice.1637, s32[1]{0:T(128)} %dynamic-slice.1638, s32[1]{0:T(128)} %dynamic-slice.1639)
+//   ROOT %tuple.1297 = (s32[1]{0:T(128)}, s32[1]{0:T(128)}, s32[1]{0:T(128)}, s32[1]{0:T(128)}) tuple(s32[1]{0:T(128)} %dynamic-slice.1636, s32[1]{0:T(128)}
+//   %dynamic-slice.1637, s32[1]{0:T(128)} %dynamic-slice.1638, s32[1]{0:T(128)} %dynamic-slice.1639)
 // }
 //
 // %fused_computation.117 (param_0.249: bf16[16,1024,1,10,256,1]) -> bf16[16,1024,1,10,256,1,1] {
@@ -1039,32 +1073,41 @@ ENTRY entry {
 // %fused_computation.124.clone (param_0.277: s32[], param_1.330: bf16[1,10,256,1,32,576,1], param_2.233: s32[]) -> bf16[1,10,256,2,1,576,1] {
 //   %param_1.330 = bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} parameter(1)
 //   %constant.5658 = bf16[]{:T(256)} constant(-inf)
-//   %pad.357 = bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} pad(bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %param_1.330, bf16[]{:T(256)} %constant.5658), padding=0_0x0_0x0_0x0_1x0_0x0_0x0_0
-//   %constant.5648 = s32[]{:T(128)} constant(0)
-//   %param_0.277 = s32[]{:T(128)} parameter(0)
-//   %dynamic-slice.1327 = bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} dynamic-slice(bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %pad.357, s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648, /*index=5*/s32[]{:T(128)} %param_0.277, s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648), dynamic_slice_sizes={1,10,256,2,1,576,1}
-//   %pad.363 = bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} pad(bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %param_1.330, bf16[]{:T(256)} %constant.5658), padding=0_0x0_0x0_0x1_0x0_0x0_0x0_0
-//   %param_2.233 = s32[]{:T(128)} parameter(2)
-//   %dynamic-slice.1333 = bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} dynamic-slice(bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %pad.363, s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648, /*index=5*/s32[]{:T(128)} %param_2.233, s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648), dynamic_slice_sizes={1,10,256,2,1,576,1}
-//   ROOT %maximum.510 = bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} maximum(bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %dynamic-slice.1327, bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %dynamic-slice.1333)
+//   %pad.357 = bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} pad(bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %param_1.330, bf16[]{:T(256)}
+//   %constant.5658), padding=0_0x0_0x0_0x0_1x0_0x0_0x0_0 %constant.5648 = s32[]{:T(128)} constant(0) %param_0.277 = s32[]{:T(128)} parameter(0)
+//   %dynamic-slice.1327 = bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} dynamic-slice(bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %pad.357,
+//   s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648, /*index=5*/s32[]{:T(128)}
+//   %param_0.277, s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648), dynamic_slice_sizes={1,10,256,2,1,576,1} %pad.363 =
+//   bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} pad(bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %param_1.330, bf16[]{:T(256)}
+//   %constant.5658), padding=0_0x0_0x0_0x1_0x0_0x0_0x0_0 %param_2.233 = s32[]{:T(128)} parameter(2) %dynamic-slice.1333 =
+//   bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} dynamic-slice(bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %pad.363, s32[]{:T(128)}
+//   %constant.5648, s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648, /*index=5*/s32[]{:T(128)} %param_2.233,
+//   s32[]{:T(128)} %constant.5648, s32[]{:T(128)} %constant.5648), dynamic_slice_sizes={1,10,256,2,1,576,1} ROOT %maximum.510 =
+//   bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} maximum(bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %dynamic-slice.1327,
+//   bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %dynamic-slice.1333)
 // }
 //
-// %fused_computation.116 (param_0.264: bf16[16,1024,1,10,256,1], param_1.329: s32[], param_2.230: bf16[1,10,256,1,32,576,1], param_3.197: s32[]) -> bf16[2,1,576,16,1024,1,1] {
+// %fused_computation.116 (param_0.264: bf16[16,1024,1,10,256,1], param_1.329: s32[], param_2.230: bf16[1,10,256,1,32,576,1], param_3.197: s32[]) ->
+// bf16[2,1,576,16,1024,1,1] {
 //   %param_1.329 = s32[]{:T(128)} parameter(1)
 //   %param_2.230 = bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} parameter(2)
 //   %param_3.197 = s32[]{:T(128)} parameter(3)
-//   %fusion.155 = bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} fusion(s32[]{:T(128)} %param_1.329, bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %param_2.230, s32[]{:T(128)} %param_3.197), kind=kLoop, calls=%fused_computation.124.clone
+//   %fusion.155 = bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} fusion(s32[]{:T(128)} %param_1.329,
+//   bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %param_2.230, s32[]{:T(128)} %param_3.197), kind=kLoop, calls=%fused_computation.124.clone
 //   %param_0.264 = bf16[16,1024,1,10,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} parameter(0)
-//   %fusion.147 = bf16[16,1024,1,10,256,1,1]{4,1,6,3,2,0,5:T(8,128)(2,1)} fusion(bf16[16,1024,1,10,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} %param_0.264), kind=kLoop, calls=%fused_computation.117
-//   ROOT %convolution.168 = bf16[2,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} convolution(bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %fusion.155, bf16[16,1024,1,10,256,1,1]{4,1,6,3,2,0,5:T(8,128)(2,1)} %fusion.147), window={size=1x16x1x10x1 pad=0_0x15_15x0_0x0_0x0_0 rhs_reversal=0x1x0x0x0}, dim_labels=23f40b1_1o23i04->40b1f23
+//   %fusion.147 = bf16[16,1024,1,10,256,1,1]{4,1,6,3,2,0,5:T(8,128)(2,1)} fusion(bf16[16,1024,1,10,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} %param_0.264), kind=kLoop,
+//   calls=%fused_computation.117 ROOT %convolution.168 = bf16[2,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)}
+//   convolution(bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %fusion.155, bf16[16,1024,1,10,256,1,1]{4,1,6,3,2,0,5:T(8,128)(2,1)} %fusion.147),
+//   window={size=1x16x1x10x1 pad=0_0x15_15x0_0x0_0x0_0 rhs_reversal=0x1x0x0x0}, dim_labels=23f40b1_1o23i04->40b1f23
 // }
 //
 // %fused_computation.123 (param_0.258: bf16[1,576,16,1024,1,1], param_1.306: bf16[2,1,576,16,1024,1,1]) -> bf16[1,576,16,1024,1,1] {
 //   %param_0.258 = bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)} parameter(0)
 //   %param_1.306 = bf16[2,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} parameter(1)
-//   %slice.1132 = bf16[1,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} slice(bf16[2,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} %param_1.306), slice={[0:1], [0:1], [0:576], [0:16], [0:1024], [0:1], [0:1]}
-//   %bitcast.678 = bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)} bitcast(bf16[1,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} %slice.1132)
-//   ROOT %add.3125 = bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)} add(bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)} %param_0.258, bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)} %bitcast.678)
+//   %slice.1132 = bf16[1,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} slice(bf16[2,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} %param_1.306),
+//   slice={[0:1], [0:1], [0:576], [0:16], [0:1024], [0:1], [0:1]} %bitcast.678 = bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)}
+//   bitcast(bf16[1,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} %slice.1132) ROOT %add.3125 = bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)}
+//   add(bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)} %param_0.258, bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)} %bitcast.678)
 // }
 //
 // %fused_computation.115 (param_0.247: bf16[16,1024,1,10,256,1]) -> bf16[16,1024,1,10,256,1,1] {
@@ -1075,152 +1118,183 @@ ENTRY entry {
 // %fused_computation.125.clone (param_0.276: s32[], param_1.328: bf16[1,10,256,1,32,576,1], param_2.232: s32[]) -> bf16[1,10,256,2,1,576,1] {
 //   %param_1.328 = bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} parameter(1)
 //   %constant.5653 = bf16[]{:T(256)} constant(-inf)
-//   %pad.360 = bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} pad(bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %param_1.328, bf16[]{:T(256)} %constant.5653), padding=0_0x0_0x0_0x0_1x0_0x0_0x0_0
-//   %constant.5643 = s32[]{:T(128)} constant(0)
-//   %param_0.276 = s32[]{:T(128)} parameter(0)
-//   %dynamic-slice.1330 = bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} dynamic-slice(bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %pad.360, s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643, /*index=5*/s32[]{:T(128)} %param_0.276, s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643), dynamic_slice_sizes={1,10,256,2,1,576,1}
-//   %pad.366 = bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} pad(bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %param_1.328, bf16[]{:T(256)} %constant.5653), padding=0_0x0_0x0_0x1_0x0_0x0_0x0_0
-//   %param_2.232 = s32[]{:T(128)} parameter(2)
-//   %dynamic-slice.1336 = bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} dynamic-slice(bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %pad.366, s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643, /*index=5*/s32[]{:T(128)} %param_2.232, s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643), dynamic_slice_sizes={1,10,256,2,1,576,1}
-//   ROOT %maximum.512 = bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} maximum(bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %dynamic-slice.1330, bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %dynamic-slice.1336)
+//   %pad.360 = bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} pad(bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %param_1.328, bf16[]{:T(256)}
+//   %constant.5653), padding=0_0x0_0x0_0x0_1x0_0x0_0x0_0 %constant.5643 = s32[]{:T(128)} constant(0) %param_0.276 = s32[]{:T(128)} parameter(0)
+//   %dynamic-slice.1330 = bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} dynamic-slice(bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %pad.360,
+//   s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643, /*index=5*/s32[]{:T(128)}
+//   %param_0.276, s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643), dynamic_slice_sizes={1,10,256,2,1,576,1} %pad.366 =
+//   bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} pad(bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %param_1.328, bf16[]{:T(256)}
+//   %constant.5653), padding=0_0x0_0x0_0x1_0x0_0x0_0x0_0 %param_2.232 = s32[]{:T(128)} parameter(2) %dynamic-slice.1336 =
+//   bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} dynamic-slice(bf16[1,10,256,2,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %pad.366, s32[]{:T(128)}
+//   %constant.5643, s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643, /*index=5*/s32[]{:T(128)} %param_2.232,
+//   s32[]{:T(128)} %constant.5643, s32[]{:T(128)} %constant.5643), dynamic_slice_sizes={1,10,256,2,1,576,1} ROOT %maximum.512 =
+//   bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} maximum(bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %dynamic-slice.1330,
+//   bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %dynamic-slice.1336)
 // }
 //
-// %fused_computation.114 (param_0.269: bf16[16,1024,1,10,256,1], param_1.327: s32[], param_2.228: bf16[1,10,256,1,32,576,1], param_3.196: s32[]) -> bf16[2,1,576,16,1024,1,1] {
+// %fused_computation.114 (param_0.269: bf16[16,1024,1,10,256,1], param_1.327: s32[], param_2.228: bf16[1,10,256,1,32,576,1], param_3.196: s32[]) ->
+// bf16[2,1,576,16,1024,1,1] {
 //   %param_1.327 = s32[]{:T(128)} parameter(1)
 //   %param_2.228 = bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} parameter(2)
 //   %param_3.196 = s32[]{:T(128)} parameter(3)
-//   %fusion.157 = bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} fusion(s32[]{:T(128)} %param_1.327, bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %param_2.228, s32[]{:T(128)} %param_3.196), kind=kLoop, calls=%fused_computation.125.clone
+//   %fusion.157 = bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} fusion(s32[]{:T(128)} %param_1.327,
+//   bf16[1,10,256,1,32,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %param_2.228, s32[]{:T(128)} %param_3.196), kind=kLoop, calls=%fused_computation.125.clone
 //   %param_0.269 = bf16[16,1024,1,10,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} parameter(0)
-//   %fusion.145 = bf16[16,1024,1,10,256,1,1]{4,1,6,3,2,0,5:T(8,128)(2,1)} fusion(bf16[16,1024,1,10,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} %param_0.269), kind=kLoop, calls=%fused_computation.115
-//   ROOT %convolution.167 = bf16[2,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} convolution(bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %fusion.157, bf16[16,1024,1,10,256,1,1]{4,1,6,3,2,0,5:T(8,128)(2,1)} %fusion.145), window={size=1x16x1x10x1 pad=0_0x15_15x0_0x0_0x0_0 rhs_reversal=0x1x0x0x0}, dim_labels=23f40b1_1o23i04->40b1f23
+//   %fusion.145 = bf16[16,1024,1,10,256,1,1]{4,1,6,3,2,0,5:T(8,128)(2,1)} fusion(bf16[16,1024,1,10,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} %param_0.269), kind=kLoop,
+//   calls=%fused_computation.115 ROOT %convolution.167 = bf16[2,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)}
+//   convolution(bf16[1,10,256,2,1,576,1]{2,5,3,1,0,6,4:T(8,128)(2,1)} %fusion.157, bf16[16,1024,1,10,256,1,1]{4,1,6,3,2,0,5:T(8,128)(2,1)} %fusion.145),
+//   window={size=1x16x1x10x1 pad=0_0x15_15x0_0x0_0x0_0 rhs_reversal=0x1x0x0x0}, dim_labels=23f40b1_1o23i04->40b1f23
 // }
 //
 // %fused_computation.121 (param_0.254: bf16[1,576,16,1024,1,1], param_1.303: bf16[2,1,576,16,1024,1,1]) -> bf16[1,576,16,1024,1,1] {
 //   %param_0.254 = bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)} parameter(0)
 //   %param_1.303 = bf16[2,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} parameter(1)
-//   %slice.1129 = bf16[1,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} slice(bf16[2,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} %param_1.303), slice={[0:1], [0:1], [0:576], [0:16], [0:1024], [0:1], [0:1]}
-//   %bitcast.675 = bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)} bitcast(bf16[1,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} %slice.1129)
-//   ROOT %add.3124 = bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)} add(bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)} %param_0.254, bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)} %bitcast.675)
+//   %slice.1129 = bf16[1,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} slice(bf16[2,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} %param_1.303),
+//   slice={[0:1], [0:1], [0:576], [0:16], [0:1024], [0:1], [0:1]} %bitcast.675 = bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)}
+//   bitcast(bf16[1,1,576,16,1024,1,1]{4,2,0,6,5,3,1:T(8,128)(2,1)} %slice.1129) ROOT %add.3124 = bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)}
+//   add(bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)} %param_0.254, bf16[1,576,16,1024,1,1]{3,1,2,5,4,0:T(8,128)(2,1)} %bitcast.675)
 // }
 //
 // %fused_computation.119 (param_0.251: bf16[1,576,16,1024,1,1], param_1.300: bf16[2,576,16,1024,1,1]) -> bf16[1,576,16,1024,1,1] {
 //   %param_0.251 = bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} parameter(0)
 //   %param_1.300 = bf16[2,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} parameter(1)
-//   %slice.1126 = bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} slice(bf16[2,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} %param_1.300), slice={[1:2], [0:576], [0:16], [0:1024], [0:1], [0:1]}
-//   ROOT %add.3123 = bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} add(bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} %param_0.251, bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} %slice.1126)
+//   %slice.1126 = bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} slice(bf16[2,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} %param_1.300), slice={[1:2],
+//   [0:576], [0:16], [0:1024], [0:1], [0:1]} ROOT %add.3123 = bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)}
+//   add(bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} %param_0.251, bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} %slice.1126)
 // }
 //
 // %fused_computation.118 (param_0.250: bf16[1,576,16,1024,1,1], param_1.298: bf16[2,576,16,1024,1,1]) -> bf16[1,576,16,1024,1,1] {
 //   %param_0.250 = bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} parameter(0)
 //   %param_1.298 = bf16[2,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} parameter(1)
-//   %slice.1125 = bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} slice(bf16[2,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} %param_1.298), slice={[1:2], [0:576], [0:16], [0:1024], [0:1], [0:1]}
-//   ROOT %add.3122 = bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} add(bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} %param_0.250, bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} %slice.1125)
+//   %slice.1125 = bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} slice(bf16[2,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} %param_1.298), slice={[1:2],
+//   [0:576], [0:16], [0:1024], [0:1], [0:1]} ROOT %add.3122 = bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)}
+//   add(bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} %param_0.250, bf16[1,576,16,1024,1,1]{3,1,0,2,5,4:T(8,128)(2,1)} %slice.1125)
 // }
 //         )",
 //           false);
 // }
 
-
-//INVALID_ARGUMENT: layout minor_to_major field contains 6 elements, but shape is rank 7: {5, 4, 3, 2, 1, 0}; shape: element_type: BF16 dimensions: 8 dimensions: 2048 dimensions: 1 dimensions: 36 dimensions: 256 dimensions: 1 dimensions: 1 layout { minor_to_major: 4 minor_to_major: 1 minor_to_major: 6 minor_to_major: 5 minor_to_major: 3 minor_to_major: 2 minor_to_major: 0 tiles { dimensions: 8 dimensions: 128 } tiles { dimensions: 2 dimensions: 1 } tail_padding_alignment_in_elements: 1 } is_dynamic_dimension: false is_dynamic_dimension: false is_dynamic_dimension: false is_dynamic_dimension: false is_dynamic_dimension: false is_dynamic_dimension: false is_dynamic_dimension: false
-// XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BalanceChainedCollectivePermutesLoopedEinsum3) {
-//   RunTest(R"(
-//         HloModule module, is_scheduled=false
+// INVALID_ARGUMENT: layout minor_to_major field contains 6 elements, but shape is rank 7: {5, 4, 3, 2, 1, 0}; shape: element_type: BF16 dimensions: 8
+// dimensions: 2048 dimensions: 1 dimensions: 36 dimensions: 256 dimensions: 1 dimensions: 1 layout { minor_to_major: 4 minor_to_major: 1 minor_to_major: 6
+// minor_to_major: 5 minor_to_major: 3 minor_to_major: 2 minor_to_major: 0 tiles { dimensions: 8 dimensions: 128 } tiles { dimensions: 2 dimensions: 1 }
+// tail_padding_alignment_in_elements: 1 } is_dynamic_dimension: false is_dynamic_dimension: false is_dynamic_dimension: false is_dynamic_dimension: false
+// is_dynamic_dimension: false is_dynamic_dimension: false is_dynamic_dimension: false
+//  XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, BalanceChainedCollectivePermutesLoopedEinsum3) {
+//    RunTest(R"(
+//          HloModule module, is_scheduled=false
 //
-// %fused_computation.1799 (param_0.4926: s32[16], param_1.5709: u32[], param_2.3976: u32[], param_3.3386: u32[], param_4.2299: u32[]) -> (s32[1], s32[1], s32[1], s32[1]) {
-//   %param_0.4926 = s32[16]{0:T(128)} parameter(0)
-//   %param_1.5709 = u32[]{:T(128)} parameter(1)
-//   %dynamic-slice.1611 = s32[1]{0:T(128)} dynamic-slice(s32[16]{0:T(128)} %param_0.4926, u32[]{:T(128)} %param_1.5709), dynamic_slice_sizes={1}
-//   %param_2.3976 = u32[]{:T(128)} parameter(2)
-//   %dynamic-slice.1612 = s32[1]{0:T(128)} dynamic-slice(s32[16]{0:T(128)} %param_0.4926, u32[]{:T(128)} %param_2.3976), dynamic_slice_sizes={1}
-//   %param_3.3386 = u32[]{:T(128)} parameter(3)
-//   %dynamic-slice.1613 = s32[1]{0:T(128)} dynamic-slice(s32[16]{0:T(128)} %param_0.4926, u32[]{:T(128)} %param_3.3386), dynamic_slice_sizes={1}
-//   %param_4.2299 = u32[]{:T(128)} parameter(4)
-//   %dynamic-slice.1614 = s32[1]{0:T(128)} dynamic-slice(s32[16]{0:T(128)} %param_0.4926, u32[]{:T(128)} %param_4.2299), dynamic_slice_sizes={1}
-//   ROOT %tuple.1346 = (s32[1]{0:T(128)}, s32[1]{0:T(128)}, s32[1]{0:T(128)}, s32[1]{0:T(128)}) tuple(s32[1]{0:T(128)} %dynamic-slice.1611, s32[1]{0:T(128)} %dynamic-slice.1612, s32[1]{0:T(128)} %dynamic-slice.1613, s32[1]{0:T(128)} %dynamic-slice.1614)
-// }
+//  %fused_computation.1799 (param_0.4926: s32[16], param_1.5709: u32[], param_2.3976: u32[], param_3.3386: u32[], param_4.2299: u32[]) -> (s32[1], s32[1],
+//  s32[1], s32[1]) {
+//    %param_0.4926 = s32[16]{0:T(128)} parameter(0)
+//    %param_1.5709 = u32[]{:T(128)} parameter(1)
+//    %dynamic-slice.1611 = s32[1]{0:T(128)} dynamic-slice(s32[16]{0:T(128)} %param_0.4926, u32[]{:T(128)} %param_1.5709), dynamic_slice_sizes={1}
+//    %param_2.3976 = u32[]{:T(128)} parameter(2)
+//    %dynamic-slice.1612 = s32[1]{0:T(128)} dynamic-slice(s32[16]{0:T(128)} %param_0.4926, u32[]{:T(128)} %param_2.3976), dynamic_slice_sizes={1}
+//    %param_3.3386 = u32[]{:T(128)} parameter(3)
+//    %dynamic-slice.1613 = s32[1]{0:T(128)} dynamic-slice(s32[16]{0:T(128)} %param_0.4926, u32[]{:T(128)} %param_3.3386), dynamic_slice_sizes={1}
+//    %param_4.2299 = u32[]{:T(128)} parameter(4)
+//    %dynamic-slice.1614 = s32[1]{0:T(128)} dynamic-slice(s32[16]{0:T(128)} %param_0.4926, u32[]{:T(128)} %param_4.2299), dynamic_slice_sizes={1}
+//    ROOT %tuple.1346 = (s32[1]{0:T(128)}, s32[1]{0:T(128)}, s32[1]{0:T(128)}, s32[1]{0:T(128)}) tuple(s32[1]{0:T(128)} %dynamic-slice.1611, s32[1]{0:T(128)}
+//    %dynamic-slice.1612, s32[1]{0:T(128)} %dynamic-slice.1613, s32[1]{0:T(128)} %dynamic-slice.1614)
+//  }
 //
-// %fused_computation.243 (param_0.505: bf16[8,2048,2,576,1,1], param_1.586: bf16[8,2048,2,576,1,1]) -> bf16[8,2048,4,576,1,1] {
-//   %param_1.586 = bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} parameter(1)
-//   %constant.5838 = bf16[]{:T(256)} constant(-inf)
-//   %pad.368 = bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} pad(bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %param_1.586, bf16[]{:T(256)} %constant.5838), padding=0_0x0_0x0_2x0_0x0_0x0_0
-//   %param_0.505 = bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} parameter(0)
-//   %pad.367 = bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} pad(bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %param_0.505, bf16[]{:T(256)} %constant.5838), padding=0_0x0_0x2_0x0_0x0_0x0_0
-//   ROOT %maximum.528 = bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} maximum(bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %pad.368, bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %pad.367)
-// }
+//  %fused_computation.243 (param_0.505: bf16[8,2048,2,576,1,1], param_1.586: bf16[8,2048,2,576,1,1]) -> bf16[8,2048,4,576,1,1] {
+//    %param_1.586 = bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} parameter(1)
+//    %constant.5838 = bf16[]{:T(256)} constant(-inf)
+//    %pad.368 = bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} pad(bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %param_1.586, bf16[]{:T(256)}
+//    %constant.5838), padding=0_0x0_0x0_2x0_0x0_0x0_0 %param_0.505 = bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} parameter(0) %pad.367 =
+//    bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} pad(bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %param_0.505, bf16[]{:T(256)} %constant.5838),
+//    padding=0_0x0_0x2_0x0_0x0_0x0_0 ROOT %maximum.528 = bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)}
+//    maximum(bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %pad.368, bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %pad.367)
+//  }
 //
-// %fused_computation.244 (param_0.507: bf16[8,2048,2,576,1,1], param_1.585: bf16[8,2048,2,576,1,1]) -> bf16[8,2048,4,576,1,1] {
-//   %param_1.585 = bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} parameter(1)
-//   %constant.5832 = bf16[]{:T(256)} constant(-inf)
-//   %pad.370 = bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} pad(bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %param_1.585, bf16[]{:T(256)} %constant.5832), padding=0_0x0_0x0_2x0_0x0_0x0_0
-//   %param_0.507 = bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} parameter(0)
-//   %pad.369 = bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} pad(bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %param_0.507, bf16[]{:T(256)} %constant.5832), padding=0_0x0_0x2_0x0_0x0_0x0_0
-//   ROOT %maximum.529 = bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} maximum(bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %pad.370, bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %pad.369)
-// }
+//  %fused_computation.244 (param_0.507: bf16[8,2048,2,576,1,1], param_1.585: bf16[8,2048,2,576,1,1]) -> bf16[8,2048,4,576,1,1] {
+//    %param_1.585 = bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} parameter(1)
+//    %constant.5832 = bf16[]{:T(256)} constant(-inf)
+//    %pad.370 = bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} pad(bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %param_1.585, bf16[]{:T(256)}
+//    %constant.5832), padding=0_0x0_0x0_2x0_0x0_0x0_0 %param_0.507 = bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} parameter(0) %pad.369 =
+//    bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} pad(bf16[8,2048,2,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %param_0.507, bf16[]{:T(256)} %constant.5832),
+//    padding=0_0x0_0x2_0x0_0x0_0x0_0 ROOT %maximum.529 = bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)}
+//    maximum(bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %pad.370, bf16[8,2048,4,576,1,1]{1,3,2,0,5,4:T(8,128)(2,1)} %pad.369)
+//  }
 //
-// %fused_computation.247 (param_0.511: bf16[8,2048,2,2,576,1,1]) -> bf16[8,2048,2,2,576,1,1] {
-//   %param_0.511 = bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} parameter(0)
-//   ROOT %copy.2292 = bf16[8,2048,2,2,576,1,1]{1,4,2,3,6,5,0:T(8,128)(2,1)} copy(bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} %param_0.511)
-// }
+//  %fused_computation.247 (param_0.511: bf16[8,2048,2,2,576,1,1]) -> bf16[8,2048,2,2,576,1,1] {
+//    %param_0.511 = bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} parameter(0)
+//    ROOT %copy.2292 = bf16[8,2048,2,2,576,1,1]{1,4,2,3,6,5,0:T(8,128)(2,1)} copy(bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} %param_0.511)
+//  }
 //
-// %fused_computation.248.clone (param_0.526: s32[], param_1.589: bf16[1,32,576,1,36,256,1], param_2.400: s32[]) -> bf16[2,2,576,1,36,256,1] {
-//   %param_1.589 = bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} parameter(1)
-//   %constant.5843 = bf16[]{:T(256)} constant(-inf)
-//   %pad.378 = bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} pad(bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %param_1.589, bf16[]{:T(256)} %constant.5843), padding=0_1x0_0x0_0x0_0x0_0x0_0x0_0
-//   %constant.5853 = s32[]{:T(128)} constant(0)
-//   %param_0.526 = s32[]{:T(128)} parameter(0)
-//   %dynamic-slice.1382 = bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} dynamic-slice(bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %pad.378, s32[]{:T(128)} %constant.5853, s32[]{:T(128)} %param_0.526, s32[]{:T(128)} %constant.5853, s32[]{:T(128)} %constant.5853, /*index=5*/s32[]{:T(128)} %constant.5853, s32[]{:T(128)} %constant.5853, s32[]{:T(128)} %constant.5853), dynamic_slice_sizes={2,2,576,1,36,256,1}
-//   %pad.377 = bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} pad(bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %param_1.589, bf16[]{:T(256)} %constant.5843), padding=1_0x0_0x0_0x0_0x0_0x0_0x0_0
-//   %param_2.400 = s32[]{:T(128)} parameter(2)
-//   %dynamic-slice.1381 = bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} dynamic-slice(bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %pad.377, s32[]{:T(128)} %constant.5853, s32[]{:T(128)} %param_2.400, s32[]{:T(128)} %constant.5853, s32[]{:T(128)} %constant.5853, /*index=5*/s32[]{:T(128)} %constant.5853, s32[]{:T(128)} %constant.5853, s32[]{:T(128)} %constant.5853), dynamic_slice_sizes={2,2,576,1,36,256,1}
-//   ROOT %maximum.532 = bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} maximum(bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %dynamic-slice.1382, bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %dynamic-slice.1381)
-// }
+//  %fused_computation.248.clone (param_0.526: s32[], param_1.589: bf16[1,32,576,1,36,256,1], param_2.400: s32[]) -> bf16[2,2,576,1,36,256,1] {
+//    %param_1.589 = bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} parameter(1)
+//    %constant.5843 = bf16[]{:T(256)} constant(-inf)
+//    %pad.378 = bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} pad(bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %param_1.589, bf16[]{:T(256)}
+//    %constant.5843), padding=0_1x0_0x0_0x0_0x0_0x0_0x0_0 %constant.5853 = s32[]{:T(128)} constant(0) %param_0.526 = s32[]{:T(128)} parameter(0)
+//    %dynamic-slice.1382 = bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} dynamic-slice(bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %pad.378,
+//    s32[]{:T(128)} %constant.5853, s32[]{:T(128)} %param_0.526, s32[]{:T(128)} %constant.5853, s32[]{:T(128)} %constant.5853, /*index=5*/s32[]{:T(128)}
+//    %constant.5853, s32[]{:T(128)} %constant.5853, s32[]{:T(128)} %constant.5853), dynamic_slice_sizes={2,2,576,1,36,256,1} %pad.377 =
+//    bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} pad(bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %param_1.589, bf16[]{:T(256)}
+//    %constant.5843), padding=1_0x0_0x0_0x0_0x0_0x0_0x0_0 %param_2.400 = s32[]{:T(128)} parameter(2) %dynamic-slice.1381 =
+//    bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} dynamic-slice(bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %pad.377, s32[]{:T(128)}
+//    %constant.5853, s32[]{:T(128)} %param_2.400, s32[]{:T(128)} %constant.5853, s32[]{:T(128)} %constant.5853, /*index=5*/s32[]{:T(128)} %constant.5853,
+//    s32[]{:T(128)} %constant.5853, s32[]{:T(128)} %constant.5853), dynamic_slice_sizes={2,2,576,1,36,256,1} ROOT %maximum.532 =
+//    bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} maximum(bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %dynamic-slice.1382,
+//    bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %dynamic-slice.1381)
+//  }
 //
-// %fused_computation.246 (param_0.521: bf16[8,2048,2,2,576,1,1], param_1.588: s32[], param_2.399: bf16[1,32,576,1,36,256,1], param_3.247: s32[]) -> bf16[8,2048,1,36,256,1,1] {
-//   %param_0.521 = bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} parameter(0)
-//   %fusion.268 = bf16[8,2048,2,2,576,1,1]{1,4,2,3,6,5,0:T(8,128)(2,1)} fusion(bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} %param_0.521), kind=kLoop, calls=%fused_computation.247
-//   %param_1.588 = s32[]{:T(128)} parameter(1)
-//   %param_2.399 = bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} parameter(2)
-//   %param_3.247 = s32[]{:T(128)} parameter(3)
-//   %fusion.271 = bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} fusion(s32[]{:T(128)} %param_1.588, bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %param_2.399, s32[]{:T(128)} %param_3.247), kind=kLoop, calls=%fused_computation.248.clone
-//   ROOT %convolution.172 = bf16[8,2048,1,36,256,1,1]{4,1,6,5,3,2,0:T(8,128)(2,1)} convolution(bf16[8,2048,2,2,576,1,1]{1,4,2,3,6,5,0:T(8,128)(2,1)} %fusion.268, bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %fusion.271), window={size=1x1x36x2x2 pad=0_0x0_0x35_35x0_0x0_0 rhs_reversal=0x1x1x0x0}, dim_labels=0b43f12_43i12o0->0b12f34
-// }
+//  %fused_computation.246 (param_0.521: bf16[8,2048,2,2,576,1,1], param_1.588: s32[], param_2.399: bf16[1,32,576,1,36,256,1], param_3.247: s32[]) ->
+//  bf16[8,2048,1,36,256,1,1] {
+//    %param_0.521 = bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} parameter(0)
+//    %fusion.268 = bf16[8,2048,2,2,576,1,1]{1,4,2,3,6,5,0:T(8,128)(2,1)} fusion(bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} %param_0.521),
+//    kind=kLoop, calls=%fused_computation.247 %param_1.588 = s32[]{:T(128)} parameter(1) %param_2.399 = bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)}
+//    parameter(2) %param_3.247 = s32[]{:T(128)} parameter(3) %fusion.271 = bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} fusion(s32[]{:T(128)}
+//    %param_1.588, bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %param_2.399, s32[]{:T(128)} %param_3.247), kind=kLoop,
+//    calls=%fused_computation.248.clone ROOT %convolution.172 = bf16[8,2048,1,36,256,1,1]{4,1,6,5,3,2,0:T(8,128)(2,1)}
+//    convolution(bf16[8,2048,2,2,576,1,1]{1,4,2,3,6,5,0:T(8,128)(2,1)} %fusion.268, bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %fusion.271),
+//    window={size=1x1x36x2x2 pad=0_0x0_0x35_35x0_0x0_0 rhs_reversal=0x1x1x0x0}, dim_labels=0b43f12_43i12o0->0b12f34
+//  }
 //
-// %fused_computation.245 (param_0.508: bf16[8,2048,2,2,576,1,1]) -> bf16[8,2048,2,2,576,1,1] {
-//   %param_0.508 = bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} parameter(0)
-//   ROOT %copy.2290 = bf16[8,2048,2,2,576,1,1]{1,4,2,3,6,5,0:T(8,128)(2,1)} copy(bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} %param_0.508)
-// }
+//  %fused_computation.245 (param_0.508: bf16[8,2048,2,2,576,1,1]) -> bf16[8,2048,2,2,576,1,1] {
+//    %param_0.508 = bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} parameter(0)
+//    ROOT %copy.2290 = bf16[8,2048,2,2,576,1,1]{1,4,2,3,6,5,0:T(8,128)(2,1)} copy(bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} %param_0.508)
+//  }
 //
-// %fused_computation.249.clone (param_0.525: s32[], param_1.587: bf16[1,32,576,1,36,256,1], param_2.398: s32[]) -> bf16[2,2,576,1,36,256,1] {
-//   %param_1.587 = bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} parameter(1)
-//   %constant.5837 = bf16[]{:T(256)} constant(-inf)
-//   %pad.382 = bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} pad(bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %param_1.587, bf16[]{:T(256)} %constant.5837), padding=0_1x0_0x0_0x0_0x0_0x0_0x0_0
-//   %constant.5848 = s32[]{:T(128)} constant(0)
-//   %param_0.525 = s32[]{:T(128)} parameter(0)
-//   %dynamic-slice.1386 = bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} dynamic-slice(bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %pad.382, s32[]{:T(128)} %constant.5848, s32[]{:T(128)} %param_0.525, s32[]{:T(128)} %constant.5848, s32[]{:T(128)} %constant.5848, /*index=5*/s32[]{:T(128)} %constant.5848, s32[]{:T(128)} %constant.5848, s32[]{:T(128)} %constant.5848), dynamic_slice_sizes={2,2,576,1,36,256,1}
-//   %pad.381 = bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} pad(bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %param_1.587, bf16[]{:T(256)} %constant.5837), padding=1_0x0_0x0_0x0_0x0_0x0_0x0_0
-//   %param_2.398 = s32[]{:T(128)} parameter(2)
-//   %dynamic-slice.1385 = bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} dynamic-slice(bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %pad.381, s32[]{:T(128)} %constant.5848, s32[]{:T(128)} %param_2.398, s32[]{:T(128)} %constant.5848, s32[]{:T(128)} %constant.5848, /*index=5*/s32[]{:T(128)} %constant.5848, s32[]{:T(128)} %constant.5848, s32[]{:T(128)} %constant.5848), dynamic_slice_sizes={2,2,576,1,36,256,1}
-//   ROOT %maximum.533 = bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} maximum(bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %dynamic-slice.1386, bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %dynamic-slice.1385)
-// }
+//  %fused_computation.249.clone (param_0.525: s32[], param_1.587: bf16[1,32,576,1,36,256,1], param_2.398: s32[]) -> bf16[2,2,576,1,36,256,1] {
+//    %param_1.587 = bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} parameter(1)
+//    %constant.5837 = bf16[]{:T(256)} constant(-inf)
+//    %pad.382 = bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} pad(bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %param_1.587, bf16[]{:T(256)}
+//    %constant.5837), padding=0_1x0_0x0_0x0_0x0_0x0_0x0_0 %constant.5848 = s32[]{:T(128)} constant(0) %param_0.525 = s32[]{:T(128)} parameter(0)
+//    %dynamic-slice.1386 = bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} dynamic-slice(bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %pad.382,
+//    s32[]{:T(128)} %constant.5848, s32[]{:T(128)} %param_0.525, s32[]{:T(128)} %constant.5848, s32[]{:T(128)} %constant.5848, /*index=5*/s32[]{:T(128)}
+//    %constant.5848, s32[]{:T(128)} %constant.5848, s32[]{:T(128)} %constant.5848), dynamic_slice_sizes={2,2,576,1,36,256,1} %pad.381 =
+//    bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} pad(bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %param_1.587, bf16[]{:T(256)}
+//    %constant.5837), padding=1_0x0_0x0_0x0_0x0_0x0_0x0_0 %param_2.398 = s32[]{:T(128)} parameter(2) %dynamic-slice.1385 =
+//    bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} dynamic-slice(bf16[2,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %pad.381, s32[]{:T(128)}
+//    %constant.5848, s32[]{:T(128)} %param_2.398, s32[]{:T(128)} %constant.5848, s32[]{:T(128)} %constant.5848, /*index=5*/s32[]{:T(128)} %constant.5848,
+//    s32[]{:T(128)} %constant.5848, s32[]{:T(128)} %constant.5848), dynamic_slice_sizes={2,2,576,1,36,256,1} ROOT %maximum.533 =
+//    bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} maximum(bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %dynamic-slice.1386,
+//    bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %dynamic-slice.1385)
+//  }
 //
-// %fused_computation.241 (param_0.503: bf16[8,2048,1,36,256,1], param_1.561: bf16[8,2048,1,36,256,1,1], param_2.397: bf16[8,2048,2,2,576,1,1], param_3.246: s32[], param_4.127: bf16[1,32,576,1,36,256,1], param_5.55: s32[]) -> bf16[8,2048,1,36,256,1] {
-//   %param_0.503 = bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} parameter(0)
-//   %param_1.561 = bf16[8,2048,1,36,256,1,1]{4,1,6,5,3,2,0:T(8,128)(2,1)} parameter(1)
-//   %bitcast.599 = bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} bitcast(bf16[8,2048,1,36,256,1,1]{4,1,6,5,3,2,0:T(8,128)(2,1)} %param_1.561)
-//   %add.3146 = bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} add(bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} %param_0.503, bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} %bitcast.599)
-//   %param_2.397 = bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} parameter(2)
-//   %fusion.266 = bf16[8,2048,2,2,576,1,1]{1,4,2,3,6,5,0:T(8,128)(2,1)} fusion(bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} %param_2.397), kind=kLoop, calls=%fused_computation.245
-//   %param_3.246 = s32[]{:T(128)} parameter(3)
-//   %param_4.127 = bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} parameter(4)
-//   %param_5.55 = s32[]{:T(128)} parameter(5)
-//   %fusion.272 = bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} fusion(s32[]{:T(128)} %param_3.246, bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %param_4.127, s32[]{:T(128)} %param_5.55), kind=kLoop, calls=%fused_computation.249.clone
-//   %convolution.171 = bf16[8,2048,1,36,256,1,1]{4,1,6,5,3,2,0:T(8,128)(2,1)} convolution(bf16[8,2048,2,2,576,1,1]{1,4,2,3,6,5,0:T(8,128)(2,1)} %fusion.266, bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %fusion.272), window={size=1x1x36x2x2 pad=0_0x0_0x35_35x0_0x0_0 rhs_reversal=0x1x1x0x0}, dim_labels=0b43f12_43i12o0->0b12f34
-//   %bitcast.596 = bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} bitcast(bf16[8,2048,1,36,256,1,1]{4,1,6,5,3,2,0:T(8,128)(2,1)} %convolution.171)
-//   ROOT %add.3143 = bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} add(bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} %add.3146, bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} %bitcast.596)
-// }
-//         )",
-//           false);
-// }
+//  %fused_computation.241 (param_0.503: bf16[8,2048,1,36,256,1], param_1.561: bf16[8,2048,1,36,256,1,1], param_2.397: bf16[8,2048,2,2,576,1,1], param_3.246:
+//  s32[], param_4.127: bf16[1,32,576,1,36,256,1], param_5.55: s32[]) -> bf16[8,2048,1,36,256,1] {
+//    %param_0.503 = bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} parameter(0)
+//    %param_1.561 = bf16[8,2048,1,36,256,1,1]{4,1,6,5,3,2,0:T(8,128)(2,1)} parameter(1)
+//    %bitcast.599 = bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} bitcast(bf16[8,2048,1,36,256,1,1]{4,1,6,5,3,2,0:T(8,128)(2,1)} %param_1.561)
+//    %add.3146 = bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} add(bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} %param_0.503,
+//    bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} %bitcast.599) %param_2.397 = bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} parameter(2)
+//    %fusion.266 = bf16[8,2048,2,2,576,1,1]{1,4,2,3,6,5,0:T(8,128)(2,1)} fusion(bf16[8,2048,2,2,576,1,1]{1,4,6,5,3,2,0:T(8,128)(2,1)} %param_2.397),
+//    kind=kLoop, calls=%fused_computation.245 %param_3.246 = s32[]{:T(128)} parameter(3) %param_4.127 = bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)}
+//    parameter(4) %param_5.55 = s32[]{:T(128)} parameter(5) %fusion.272 = bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} fusion(s32[]{:T(128)}
+//    %param_3.246, bf16[1,32,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %param_4.127, s32[]{:T(128)} %param_5.55), kind=kLoop,
+//    calls=%fused_computation.249.clone %convolution.171 = bf16[8,2048,1,36,256,1,1]{4,1,6,5,3,2,0:T(8,128)(2,1)}
+//    convolution(bf16[8,2048,2,2,576,1,1]{1,4,2,3,6,5,0:T(8,128)(2,1)} %fusion.266, bf16[2,2,576,1,36,256,1]{5,2,0,1,4,3,6:T(8,128)(2,1)} %fusion.272),
+//    window={size=1x1x36x2x2 pad=0_0x0_0x35_35x0_0x0_0 rhs_reversal=0x1x1x0x0}, dim_labels=0b43f12_43i12o0->0b12f34 %bitcast.596 =
+//    bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} bitcast(bf16[8,2048,1,36,256,1,1]{4,1,6,5,3,2,0:T(8,128)(2,1)} %convolution.171) ROOT %add.3143 =
+//    bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} add(bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} %add.3146,
+//    bf16[8,2048,1,36,256,1]{4,1,3,0,5,2:T(8,128)(2,1)} %bitcast.596)
+//  }
+//          )",
+//            false);
+//  }
 
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, MoveCentainConv2) {
   RunTest(R"(
@@ -1450,9 +1524,9 @@ ENTRY entry {
 //           false);
 // }
 
-
 // hangs
-//2025-06-03 16:35:20.227679: W xla/hlo/transforms/simplifiers/hlo_rematerialization.cc:3021] Can't reduce memory use below -85.40GiB (-91702322813 bytes) by rematerialization; only reduced to 112.00GiB (120263278632 bytes), down from 112.00GiB (120263278632 bytes) originally
+// 2025-06-03 16:35:20.227679: W xla/hlo/transforms/simplifiers/hlo_rematerialization.cc:3021] Can't reduce memory use below -85.40GiB (-91702322813 bytes) by
+// rematerialization; only reduced to 112.00GiB (120263278632 bytes), down from 112.00GiB (120263278632 bytes) originally
 // XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllToAllAsyncBalance) {
 //   RunTest(R"(
 //         HloModule module, is_scheduled=false
@@ -1531,7 +1605,6 @@ ENTRY entry {
 //           false);
 // }
 
-
 // XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, ReleaseStartWhenLatencyDue) {
 //   RunTest(R"(
 //         HloModule module, is_scheduled=false
@@ -1598,8 +1671,6 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
           false);
 }
 
-
-
 // XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, MultipleAsyncDoneOperationsDoNotCreateLoop) {
 //   RunTest(R"(
 //         HloModule multiple_async_done_scheduler_test, is_scheduled=false
@@ -1609,7 +1680,8 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 // }
 //
 // ENTRY main {
-//   %while_body_forward_pass_input_tuple = (s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)}) parameter(0), backend_config={"compute_type":"COMPUTE_TYPE_SCALAR"}
+//   %while_body_forward_pass_input_tuple = (s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)}) parameter(0),
+//   backend_config={"compute_type":"COMPUTE_TYPE_SCALAR"}
 //
 //   %get-tuple-element.0 = s32[<=4096]{0:T(8)M(1024)} get-tuple-element(
 //       (s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)}, s32[<=4096]{0:T(8)M(1024)}) %while_body_forward_pass_input_tuple),
@@ -1712,8 +1784,8 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 //   send-done = token[] send-done(send), channel_id=1246, control-predecessors={recv-done}
 //   p2 = pred[] parameter(2)
 //   tuple = (bf16[1,1,4096,1344]{2,3,1,0:T(8,128)(2,1)}, bf16[1,1,4096,1344]{2,3,1,0:T(8,128)(2,1)}, pred[]) tuple(get-tuple-element, p1, p2)
-//   while = (bf16[1,1,4096,1344]{2,3,1,0:T(8,128)(2,1)}, bf16[1,1,4096,1344]{2,3,1,0:T(8,128)(2,1)}, pred[]) while(tuple), condition=while_cond, body=while_body
-//   ROOT gte0 = bf16[1,1,4096,1344]{2,3,1,0:T(8,128)(2,1)} get-tuple-element(while), index=0
+//   while = (bf16[1,1,4096,1344]{2,3,1,0:T(8,128)(2,1)}, bf16[1,1,4096,1344]{2,3,1,0:T(8,128)(2,1)}, pred[]) while(tuple), condition=while_cond,
+//   body=while_body ROOT gte0 = bf16[1,1,4096,1344]{2,3,1,0:T(8,128)(2,1)} get-tuple-element(while), index=0
 // }
 //         )",
 //           false);
@@ -1761,12 +1833,11 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 //   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
 //   cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}
 //   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s)
-//   cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
-//   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s), frontend_attributes={_scheduling_group_id="0"}
-//   cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
-//   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
-//   slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16], [0:64], [0:256]}
-//   c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
+//   cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}},
+//   frontend_attributes={_scheduling_group_id="0"} cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s),
+//   frontend_attributes={_scheduling_group_id="0"} cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d),
+//   source_target_pairs={{1,0}} cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s) slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16],
+//   [0:64], [0:256]} c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
 //     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="0"}
 //   c1 = f32[16,256,256]{2,1,0} convolution(p0, slice),
 //     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb
@@ -1786,12 +1857,11 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 //   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
 //   cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}
 //   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s)
-//   cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
-//   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s), frontend_attributes={_scheduling_group_id="0"}
-//   cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
-//   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
-//   slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16], [0:64], [0:256]}
-//   c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
+//   cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}},
+//   frontend_attributes={_scheduling_group_id="0"} cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s),
+//   frontend_attributes={_scheduling_group_id="0"} cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d),
+//   source_target_pairs={{1,0}} cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s) slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16],
+//   [0:64], [0:256]} c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
 //     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb
 //   c1 = f32[16,256,256]{2,1,0} convolution(p0, slice),
 //     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="0"}
@@ -1811,12 +1881,11 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 //   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
 //   cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}
 //   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s)
-//   cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
-//   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s), frontend_attributes={_scheduling_group_id="0"}
-//   cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
-//   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
-//   slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16], [0:64], [0:256]}
-//   c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
+//   cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}},
+//   frontend_attributes={_scheduling_group_id="0"} cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s),
+//   frontend_attributes={_scheduling_group_id="0"} cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d),
+//   source_target_pairs={{1,0}} cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s) slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16],
+//   [0:64], [0:256]} c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
 //     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="0"}
 //   c1 = f32[16,256,256]{2,1,0} convolution(p0, slice),
 //     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="0"}
@@ -1836,12 +1905,11 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 //   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
 //   cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}
 //   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s)
-//   cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
-//   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s), frontend_attributes={_scheduling_group_id="0"}
-//   cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
-//   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
-//   slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16], [0:64], [0:256]}
-//   c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
+//   cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}},
+//   frontend_attributes={_scheduling_group_id="0"} cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s),
+//   frontend_attributes={_scheduling_group_id="0"} cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d),
+//   source_target_pairs={{1,0}} cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s) slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16],
+//   [0:64], [0:256]} c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
 //     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="0"}
 //   c1 = f32[1,256,256]{2,1,0} convolution(c0, c0),
 //     window={size=16 stride=15}, dim_labels=0fb_0io->0fb
@@ -1861,12 +1929,11 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 //   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
 //   cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}
 //   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s)
-//   cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
-//   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s), frontend_attributes={_scheduling_group_id="0"}
-//   cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
-//   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
-//   slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16], [0:64], [0:256]}
-//   c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
+//   cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}},
+//   frontend_attributes={_scheduling_group_id="0"} cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s),
+//   frontend_attributes={_scheduling_group_id="0"} cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d),
+//   source_target_pairs={{1,0}} cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s) slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16],
+//   [0:64], [0:256]} c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
 //     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb
 //   c1 = f32[1,256,256]{2,1,0} convolution(c0, c0),
 //     window={size=16 stride=15}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="0"}
@@ -1886,12 +1953,11 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 //   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
 //   cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}
 //   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s)
-//   cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
-//   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s), frontend_attributes={_scheduling_group_id="0"}
-//   cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
-//   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
-//   slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16], [0:64], [0:256]}
-//   c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
+//   cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}},
+//   frontend_attributes={_scheduling_group_id="0"} cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s),
+//   frontend_attributes={_scheduling_group_id="0"} cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d),
+//   source_target_pairs={{1,0}} cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s) slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16],
+//   [0:64], [0:256]} c0 = f32[16,256,256]{2,1,0} convolution(p0, slice),
 //     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="0"}
 //   c1 = f32[1,256,256]{2,1,0} convolution(c0, c0),
 //     window={size=16 stride=15}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="0"}
@@ -1909,13 +1975,12 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 //   p0 = f32[16,64,256]{2,1,0} parameter(0)
 //   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
 //   p2 = f32[512,2048,2048]{2,1,0} parameter(2)
-//   cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
-//   cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s), frontend_attributes={_scheduling_group_id="0"}
-//   cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
-//   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s), frontend_attributes={_scheduling_group_id="0"}
-//   cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d), source_target_pairs={{1,0}}
-//   cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s)
-//   c0 = f32[16,256,256]{2,1,0} convolution(p0, p0),
+//   cp1s = (f32[512,2048,2048]{2,1,0}, f32[512,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}},
+//   frontend_attributes={_scheduling_group_id="0"} cp1d = f32[512,2048,2048]{2,1,0} collective-permute-done(cp1s),
+//   frontend_attributes={_scheduling_group_id="0"} cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1),
+//   source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"} cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s),
+//   frontend_attributes={_scheduling_group_id="0"} cp3s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp2d),
+//   source_target_pairs={{1,0}} cp3d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp3s) c0 = f32[16,256,256]{2,1,0} convolution(p0, p0),
 //     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="0"}
 //   ROOT tuple.2 = (f32[16,256,256]{2,1,0}, f32[512,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}) tuple(c0, cp1d, cp3d)
 // }
@@ -1930,25 +1995,27 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 // fused_computation {
 //   param0 = f32[16,64,256]{2,1,0} parameter(0)
 //   param1 = f32[16,64,256]{2,1,0} parameter(1)
-//   ROOT c0 = f32[16,256,256]{2,1,0} convolution(param0, param1), window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="0"}
+//   ROOT c0 = f32[16,256,256]{2,1,0} convolution(param0, param1), window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb,
+//   frontend_attributes={_scheduling_group_id="0"}
 // }
 //
 // fused_computation.1 {
 //   param0.1 = f32[16,256,256]{2,1,0} parameter(0)
 //   param1.1 = f32[16,256,256]{2,1,0} parameter(1)
-//   ROOT c1 = f32[1,256,256]{2,1,0} convolution(param0.1, param1.1), window={size=16 stride=15}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="1"}
+//   ROOT c1 = f32[1,256,256]{2,1,0} convolution(param0.1, param1.1), window={size=16 stride=15}, dim_labels=0fb_0io->0fb,
+//   frontend_attributes={_scheduling_group_id="1"}
 // }
 //
 // ENTRY entry {
 //   p0 = f32[16,64,256]{2,1,0} parameter(0)
 //   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
-//   cp0s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
-//   cp0d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp0s), frontend_attributes={_scheduling_group_id="0"}
-//   cp1s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp0d), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="1"}
-//   cp1d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp1s), frontend_attributes={_scheduling_group_id="1"}
-//   f0 = f32[16,256,256]{2,1,0} fusion(p0, p0), kind=kOutput, calls=fused_computation, frontend_attributes={_scheduling_group_id="0"}
-//   f1 = f32[1,256,256]{2,1,0} fusion(f0, f0), kind=kOutput, calls=fused_computation.1, frontend_attributes={_scheduling_group_id="1"}
-//   ROOT tuple = (f32[128,2048,2048]{2,1,0}, f32[1,256,256]{2,1,0}) tuple(cp1d, f1)
+//   cp0s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}},
+//   frontend_attributes={_scheduling_group_id="0"} cp0d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp0s),
+//   frontend_attributes={_scheduling_group_id="0"} cp1s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(cp0d),
+//   source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="1"} cp1d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp1s),
+//   frontend_attributes={_scheduling_group_id="1"} f0 = f32[16,256,256]{2,1,0} fusion(p0, p0), kind=kOutput, calls=fused_computation,
+//   frontend_attributes={_scheduling_group_id="0"} f1 = f32[1,256,256]{2,1,0} fusion(f0, f0), kind=kOutput, calls=fused_computation.1,
+//   frontend_attributes={_scheduling_group_id="1"} ROOT tuple = (f32[128,2048,2048]{2,1,0}, f32[1,256,256]{2,1,0}) tuple(cp1d, f1)
 // }
 //         )",
 //           false);
@@ -1961,15 +2028,17 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 // fused_computation {
 //   param0 = f32[16,64,256]{2,1,0} parameter(0)
 //   param1 = f32[16,64,256]{2,1,0} parameter(1)
-//   ROOT c0 = f32[16,256,256]{2,1,0} convolution(param0, param1), window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="0"}
+//   ROOT c0 = f32[16,256,256]{2,1,0} convolution(param0, param1), window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb,
+//   frontend_attributes={_scheduling_group_id="0"}
 // }
 //
 // ENTRY entry {
 //   p0 = f32[16,64,256]{2,1,0} parameter(0)
 //   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
-//   cp0s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
-//   cp0d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp0s), frontend_attributes={_scheduling_group_id="0"}
-//   ROOT f0 = f32[16,256,256]{2,1,0} fusion(p0, p0), kind=kOutput, calls=fused_computation, frontend_attributes={_scheduling_group_id="0"}
+//   cp0s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}},
+//   frontend_attributes={_scheduling_group_id="0"} cp0d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp0s),
+//   frontend_attributes={_scheduling_group_id="0"} ROOT f0 = f32[16,256,256]{2,1,0} fusion(p0, p0), kind=kOutput, calls=fused_computation,
+//   frontend_attributes={_scheduling_group_id="0"}
 // }
 //         )",
 //           false);
@@ -1991,11 +2060,10 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 //   p0 = f32[128,2048]{1,0} parameter(0)
 //   p1 = f32[8,2048]{1,0} parameter(1)
 //   p2 = f32[128,2048]{1,0} parameter(2)
-//   cps = (f32[128,2048]{1,0}, f32[128,2048]{1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
-//   cpd = f32[128,2048]{1,0} collective-permute-done(cps), frontend_attributes={_scheduling_group_id="0"}
-//   fusion = (f32[128,2048]{1,0}, f32[128,2048]{1,0}) fusion(p0, p1), kind=kLoop, calls=fused_computation, frontend_attributes={_scheduling_group_id="0"}
-//   gte = f32[128,2048]{1,0} get-tuple-element(fusion), index=0, frontend_attributes={_scheduling_group_id="0"}
-//   ROOT add = f32[128,2048]{1,0} add(gte, cpd)
+//   cps = (f32[128,2048]{1,0}, f32[128,2048]{1,0}, u32[], u32[]) collective-permute-start(p2), source_target_pairs={{1,0}},
+//   frontend_attributes={_scheduling_group_id="0"} cpd = f32[128,2048]{1,0} collective-permute-done(cps), frontend_attributes={_scheduling_group_id="0"} fusion
+//   = (f32[128,2048]{1,0}, f32[128,2048]{1,0}) fusion(p0, p1), kind=kLoop, calls=fused_computation, frontend_attributes={_scheduling_group_id="0"} gte =
+//   f32[128,2048]{1,0} get-tuple-element(fusion), index=0, frontend_attributes={_scheduling_group_id="0"} ROOT add = f32[128,2048]{1,0} add(gte, cpd)
 // }
 //         )",
 //           false);
@@ -2020,10 +2088,9 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 //   dot = f32[16,16] dot(param, param), lhs_contracting_dims={0}, rhs_contracting_dims={1}
 //   recv_done = (f32[16], token[]) recv-done(gte), frontend_attributes={_xla_send_recv_source_target_pairs={{0,1}, {1,0}}}
 //   after_all = token[] after-all()
-//   recv = (f32[16,16], u32[], token[]) recv(after_all), frontend_attributes={_xla_send_recv_source_target_pairs={{0,1}, {1,0}}}, control-predecessors={recv_done}
-//   c1 = u32[] constant(1)
-//   add = add(i, c1)
-//   ROOT tuple_ = ((f32[16,16], u32[], token[]), f32[16,16], u32[]) tuple(recv, dot, add)
+//   recv = (f32[16,16], u32[], token[]) recv(after_all), frontend_attributes={_xla_send_recv_source_target_pairs={{0,1}, {1,0}}},
+//   control-predecessors={recv_done} c1 = u32[] constant(1) add = add(i, c1) ROOT tuple_ = ((f32[16,16], u32[], token[]), f32[16,16], u32[]) tuple(recv, dot,
+//   add)
 // }
 //
 // ENTRY main {
@@ -2047,12 +2114,11 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 // ENTRY entry {
 //   p0 = f32[16,64,256]{2,1,0} parameter(0)
 //   p1 = f32[128,2048,2048]{2,1,0} parameter(1)
-//   cp1s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}, frontend_attributes={_scheduling_group_id="0"}
-//   cp1d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp1s), frontend_attributes={_scheduling_group_id="0"}
-//   cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}}
-//   cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s)
-//   slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16], [0:64], [0:256]}
-//   c1 = f32[16,256,256]{2,1,0} convolution(p0, p0),
+//   cp1s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1), source_target_pairs={{1,0}},
+//   frontend_attributes={_scheduling_group_id="0"} cp1d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp1s),
+//   frontend_attributes={_scheduling_group_id="0"} cp2s = (f32[128,2048,2048]{2,1,0}, f32[128,2048,2048]{2,1,0}, u32[], u32[]) collective-permute-start(p1),
+//   source_target_pairs={{1,0}} cp2d = f32[128,2048,2048]{2,1,0} collective-permute-done(cp2s) slice = f32[16,64,256]{2,1,0} slice(cp1d), slice={[0:16],
+//   [0:64], [0:256]} c1 = f32[16,256,256]{2,1,0} convolution(p0, p0),
 //     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="0"}
 //   c2 = f32[16,256,256]{2,1,0} convolution(p0, slice),
 //     window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb
@@ -2076,12 +2142,11 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 //   gte0 = f32[16,64,256]{2,1,0} get-tuple-element(param), index=0
 //   gte1 = f32[16,64,256]{2,1,0} get-tuple-element(param), index=1
 //   gte2 = pred[] get-tuple-element(param), index=2
-//   cps1 = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, u32[], u32[]) collective-permute-start(gte1), source_target_pairs={{0,1},{1,2},{2,3},{3,0}}, frontend_attributes={_scheduling_group_id="1"}
-//   cpd1 = f32[16,64,256]{2,1,0} collective-permute-done(cps1), frontend_attributes={_scheduling_group_id="1"}
-//   c1 = f32[16,256,256]{2,1,0} convolution(gte0, gte0), window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="1"}
-//   slice = f32[16,64,256]{2,1,0} slice(c1), slice={[0:16], [0:64], [0:256]}
-//   add = f32[16,64,256]{2,1,0} add(gte0, slice)
-//   ROOT tuple = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) tuple(add, cpd1, gte2)
+//   cps1 = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, u32[], u32[]) collective-permute-start(gte1), source_target_pairs={{0,1},{1,2},{2,3},{3,0}},
+//   frontend_attributes={_scheduling_group_id="1"} cpd1 = f32[16,64,256]{2,1,0} collective-permute-done(cps1), frontend_attributes={_scheduling_group_id="1"}
+//   c1 = f32[16,256,256]{2,1,0} convolution(gte0, gte0), window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb,
+//   frontend_attributes={_scheduling_group_id="1"} slice = f32[16,64,256]{2,1,0} slice(c1), slice={[0:16], [0:64], [0:256]} add = f32[16,64,256]{2,1,0}
+//   add(gte0, slice) ROOT tuple = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) tuple(add, cpd1, gte2)
 // }
 //
 // ENTRY entry {
@@ -2089,13 +2154,12 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 //   p1 = f32[16,64,256]{2,1,0} parameter(1)
 //   p2 = f32[16,64,256]{2,1,0} parameter(2)
 //   p3 = pred[] parameter(3)
-//   c0 = f32[16,256,256]{2,1,0} convolution(p1, p2), window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="1"}
-//   ags0 = (f32[256,1024]{1,0}, f32[1024,1024]{1,0}) all-gather-start(p0), replica_groups={{0,1}, {1,0}}, dimensions={0}, frontend_attributes={_scheduling_group_id="1"}
-//   tuple = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) tuple(p1, p2, p3)
-//   while = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) while(tuple), condition=while_cond, body=while_body
-//   agd0 = f32[1024,1024]{1,0} all-gather-done(ags0), frontend_attributes={_scheduling_group_id="1"}
-//   gte = f32[16,64,256]{2,1,0} get-tuple-element(while), index=0
-//   ROOT tuple1 = (f32[16,64,256]{2,1,0}, f32[16,256,256]{2,1,0}, f32[1024,1024]{1,0}) tuple(gte, c0, agd0)
+//   c0 = f32[16,256,256]{2,1,0} convolution(p1, p2), window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb,
+//   frontend_attributes={_scheduling_group_id="1"} ags0 = (f32[256,1024]{1,0}, f32[1024,1024]{1,0}) all-gather-start(p0), replica_groups={{0,1}, {1,0}},
+//   dimensions={0}, frontend_attributes={_scheduling_group_id="1"} tuple = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) tuple(p1, p2, p3) while =
+//   (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) while(tuple), condition=while_cond, body=while_body agd0 = f32[1024,1024]{1,0}
+//   all-gather-done(ags0), frontend_attributes={_scheduling_group_id="1"} gte = f32[16,64,256]{2,1,0} get-tuple-element(while), index=0 ROOT tuple1 =
+//   (f32[16,64,256]{2,1,0}, f32[16,256,256]{2,1,0}, f32[1024,1024]{1,0}) tuple(gte, c0, agd0)
 // }
 //       )",
 //           false);
@@ -2115,12 +2179,11 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 //   gte0 = f32[16,64,256]{2,1,0} get-tuple-element(param), index=0
 //   gte1 = f32[16,64,256]{2,1,0} get-tuple-element(param), index=1
 //   gte2 = pred[] get-tuple-element(param), index=2
-//   cps1 = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, u32[], u32[]) collective-permute-start(gte1), source_target_pairs={{0,1},{1,2},{2,3},{3,0}}, frontend_attributes={_scheduling_group_id="1"}
-//   cpd1 = f32[16,64,256]{2,1,0} collective-permute-done(cps1), frontend_attributes={_scheduling_group_id="1"}
-//   c1 = f32[16,256,256]{2,1,0} convolution(gte0, gte0), window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="1"}
-//   slice = f32[16,64,256]{2,1,0} slice(c1), slice={[0:16], [0:64], [0:256]}
-//   add = f32[16,64,256]{2,1,0} add(gte0, slice)
-//   ROOT tuple = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) tuple(add, cpd1, gte2)
+//   cps1 = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, u32[], u32[]) collective-permute-start(gte1), source_target_pairs={{0,1},{1,2},{2,3},{3,0}},
+//   frontend_attributes={_scheduling_group_id="1"} cpd1 = f32[16,64,256]{2,1,0} collective-permute-done(cps1), frontend_attributes={_scheduling_group_id="1"}
+//   c1 = f32[16,256,256]{2,1,0} convolution(gte0, gte0), window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb,
+//   frontend_attributes={_scheduling_group_id="1"} slice = f32[16,64,256]{2,1,0} slice(c1), slice={[0:16], [0:64], [0:256]} add = f32[16,64,256]{2,1,0}
+//   add(gte0, slice) ROOT tuple = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) tuple(add, cpd1, gte2)
 // }
 //
 // ENTRY entry {
@@ -2128,15 +2191,14 @@ XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RerunWithSmallerMemoryLimit) 
 //   p1 = f32[16,64,256]{2,1,0} parameter(1)
 //   p2 = f32[16,64,256]{2,1,0} parameter(2)
 //   p3 = pred[] parameter(3)
-//   c0 = f32[16,256,256]{2,1,0} convolution(p1, p2), window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb, frontend_attributes={_scheduling_group_id="1"}
-//   ags0 = (f32[256,1024]{1,0}, f32[1024,1024]{1,0}) all-gather-start(p0), replica_groups={{0,1}, {1,0}}, dimensions={0}, frontend_attributes={_scheduling_group_id="1"}
-//   ags1 = (f32[256,1024]{1,0}, f32[1024,1024]{1,0}) all-gather-start(p0), replica_groups={{0,1}, {1,0}}, dimensions={0}, frontend_attributes={_scheduling_group_id="1"}
-//   tuple = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) tuple(p1, p2, p3)
-//   while = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) while(tuple), condition=while_cond, body=while_body
-//   agd1 = f32[1024,1024]{1,0} all-gather-done(ags1), frontend_attributes={_scheduling_group_id="1"}
-//   agd0 = f32[1024,1024]{1,0} all-gather-done(ags0), frontend_attributes={_scheduling_group_id="1"}
-//   gte = f32[16,64,256]{2,1,0} get-tuple-element(while), index=0
-//   ROOT tuple1 = (f32[16,64,256]{2,1,0}, f32[16,256,256]{2,1,0}, f32[1024,1024]{1,0}, f32[1024,1024]{1,0}) tuple(gte, c0, agd0, agd1)
+//   c0 = f32[16,256,256]{2,1,0} convolution(p1, p2), window={size=16 stride=15 lhs_dilate=16}, dim_labels=0fb_0io->0fb,
+//   frontend_attributes={_scheduling_group_id="1"} ags0 = (f32[256,1024]{1,0}, f32[1024,1024]{1,0}) all-gather-start(p0), replica_groups={{0,1}, {1,0}},
+//   dimensions={0}, frontend_attributes={_scheduling_group_id="1"} ags1 = (f32[256,1024]{1,0}, f32[1024,1024]{1,0}) all-gather-start(p0),
+//   replica_groups={{0,1}, {1,0}}, dimensions={0}, frontend_attributes={_scheduling_group_id="1"} tuple = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0},
+//   pred[]) tuple(p1, p2, p3) while = (f32[16,64,256]{2,1,0}, f32[16,64,256]{2,1,0}, pred[]) while(tuple), condition=while_cond, body=while_body agd1 =
+//   f32[1024,1024]{1,0} all-gather-done(ags1), frontend_attributes={_scheduling_group_id="1"} agd0 = f32[1024,1024]{1,0} all-gather-done(ags0),
+//   frontend_attributes={_scheduling_group_id="1"} gte = f32[16,64,256]{2,1,0} get-tuple-element(while), index=0 ROOT tuple1 = (f32[16,64,256]{2,1,0},
+//   f32[16,256,256]{2,1,0}, f32[1024,1024]{1,0}, f32[1024,1024]{1,0}) tuple(gte, c0, agd0, agd1)
 // }
 //       )",
 //           false);
