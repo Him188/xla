@@ -20,13 +20,27 @@
 #include "xla/tests/tg/test_util.h"
 #include "xla/tsl/lib/core/status_test_util.h"
 
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
+#include <cstdio>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <string>
+#include <sys/resource.h>
+#include <unistd.h>
 
 namespace xla {
 
 class LatencyHidingSchedulerConcurrencyTests : public PjRtGpuStreamExecutorConcurrencyTestBase {
 protected:
+  bool measure_performance_ = true;
+
+  void SetUp() override {
+    PjRtGpuStreamExecutorConcurrencyTestBase::SetUp();
+    if (const char *env = getenv("XLA_MEASURE_TRACER_PERF"); env && std::string(env) == "1")
+      measure_performance_ = true;
+  }
+
   DebugOptions GetDebugOptionsForTest() const override {
     DebugOptions dbg = PjRtGpuStreamExecutorConcurrencyTestBase::GetDebugOptionsForTest();
     dbg.set_xla_gpu_enable_latency_hiding_scheduler(true);
@@ -50,6 +64,19 @@ protected:
     int num_partitions;
   };
 
+  void EnablePerformanceMeasurements() { measure_performance_ = true; }
+
+  static size_t GetCurrentRSSBytes() {
+    long rss = 0;
+    FILE *fp = fopen("/proc/self/statm", "r");
+    if (fp != nullptr) {
+      if (fscanf(fp, "%*s%ld", &rss) != 1)
+        rss = 0;
+      fclose(fp);
+    }
+    return rss * sysconf(_SC_PAGESIZE);
+  }
+
   void RunTest(const std::string_view hlo_string, bool expect_race) {
     setenv("NCCL_DEBUG", "INFO", 1);
 
@@ -63,23 +90,63 @@ protected:
     auto fake_arg_slices = MakeFakeArgumentSlices(fake_args);
     std::vector<absl::Span<const LiteralSlice>> exec_args = MakeInnerSpan(fake_arg_slices);
 
-    gpu::ConcurrencyTracer tracer;
-    ExecuteOptions exec_opts;
-    exec_opts.gpu_concurrency_tracer = &tracer;
-    exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
+    if (!measure_performance_) {
+      gpu::ConcurrencyTracer tracer;
+      ExecuteOptions exec_opts;
+      exec_opts.gpu_concurrency_tracer = &tracer;
+      exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
 
-    // Execute
-    TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, exec_args, exec_opts));
+      // Execute
+      TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, exec_args, exec_opts));
 
-    // Print compiled thunks
-    xla_test_util::print_gpu_thunk_info(exe.get());
-    auto races = tracer.DetectDataRaces();
-    std::cout << "races=" << races.size() << std::endl;
-    if (!races.empty()) {
-      tracer.PrintDataRaces(std::cout);
+      // Print compiled thunks
+      xla_test_util::print_gpu_thunk_info(exe.get());
+      auto races = tracer.DetectDataRaces();
+      std::cout << "races=" << races.size() << std::endl;
+      if (!races.empty()) {
+        tracer.PrintDataRaces(std::cout);
+      }
+      tracer.PrintTraces(std::cout);
+      ASSERT_EQ(races.empty(), !expect_race);
+    } else {
+      ExecuteOptions base_opts;
+      base_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
+      size_t rss_before_base = GetCurrentRSSBytes();
+      absl::Time t0 = absl::Now();
+      TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, exec_args, base_opts));
+      absl::Time t1 = absl::Now();
+      size_t rss_after_base = GetCurrentRSSBytes();
+      double base_ms = absl::ToDoubleMilliseconds(t1 - t0);
+      size_t base_delta = rss_after_base - rss_before_base;
+
+      gpu::ConcurrencyTracer tracer;
+      ExecuteOptions exec_opts;
+      exec_opts.gpu_concurrency_tracer = &tracer;
+      exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
+      size_t rss_before_traced = GetCurrentRSSBytes();
+      absl::Time t2 = absl::Now();
+      TF_ASSERT_OK_AND_ASSIGN(auto outs_tr, Execute(*exe, exec_args, exec_opts));
+      absl::Time t3 = absl::Now();
+      size_t rss_after_traced = GetCurrentRSSBytes();
+      double traced_ms = absl::ToDoubleMilliseconds(t3 - t2);
+      size_t traced_delta = rss_after_traced - rss_before_traced;
+
+      xla_test_util::print_gpu_thunk_info(exe.get());
+      auto races = tracer.DetectDataRaces();
+      std::cout << "races=" << races.size() << std::endl;
+      if (!races.empty()) {
+        tracer.PrintDataRaces(std::cout);
+      }
+      tracer.PrintTraces(std::cout);
+      ASSERT_EQ(races.empty(), !expect_race);
+
+      std::cout << "Baseline execution time (ms): " << base_ms << std::endl;
+      std::cout << "Traced execution time (ms): " << traced_ms << std::endl;
+      std::cout << "Execution time overhead (ms): " << traced_ms - base_ms << std::endl;
+      std::cout << "Baseline memory delta (bytes): " << base_delta << std::endl;
+      std::cout << "Traced memory delta (bytes): " << traced_delta << std::endl;
+      std::cout << "Tracer memory usage (bytes): " << tracer.GetApproximateMemoryUsage() << std::endl;
     }
-    tracer.PrintTraces(std::cout);
-    ASSERT_EQ(races.empty(), !expect_race);
   }
 
   absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> Compile(const std::string_view hlo_string, const DeviceMesh &mesh,

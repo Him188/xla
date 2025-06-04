@@ -31,6 +31,10 @@ class ConcurrencyTracer {
 
   void PrintTraces(std::ostream& os);
 
+  // Returns an approximation of the memory used to store the collected traces
+  // in bytes.  This method is thread-safe.
+  size_t GetApproximateMemoryUsage();
+
   enum class AccessKind { kRead, kWrite };
 
   struct SourceInfo final {
@@ -198,12 +202,14 @@ class ConcurrencyTracer {
 
   void RecordAsyncBufferAccesses(
       absl::Span<const NcclCollectiveThunk::Buffer> buffers,
-      const stream_executor::Event* event,
-      const Thunk::ExecuteParams& params, const stream_executor::Stream* stream, int device_ordinal, SourceInfo source, AsyncStreamKind async_stream_kind);
+      const stream_executor::Event* event, const Thunk::ExecuteParams& params,
+      const stream_executor::Stream* stream, int device_ordinal,
+      SourceInfo source, AsyncStreamKind async_stream_kind);
 
-  void RecordSyncBufferAccesses(absl::Span<const NcclCollectiveThunk::Buffer> buffers,
-                     const stream_executor::Stream* stream, int device_ordinal,
-                     SourceInfo source);
+  void RecordSyncBufferAccesses(
+      absl::Span<const NcclCollectiveThunk::Buffer> buffers,
+      const stream_executor::Stream* stream, int device_ordinal,
+      SourceInfo source);
 };
 
 }  // namespace xla::gpu

@@ -249,6 +249,31 @@ void ConcurrencyTracer::PrintTraces(std::ostream& os) {
   // Restore caller’s formatting.
   os.flags(old_flags);
 }
+
+size_t ConcurrencyTracer::GetApproximateMemoryUsage() {
+  std::lock_guard lock(mutex_);
+  size_t bytes =
+      sizeof(*this) + trace_.capacity() * sizeof(std::unique_ptr<Trace>);
+  for (const auto& p : trace_) {
+    if (dynamic_cast<const BufferRead*>(p.get())) {
+      bytes += sizeof(BufferRead);
+    } else if (dynamic_cast<const BufferWrite*>(p.get())) {
+      bytes += sizeof(BufferWrite);
+    } else if (dynamic_cast<const AsyncBufferRead*>(p.get())) {
+      bytes += sizeof(AsyncBufferRead);
+    } else if (dynamic_cast<const AsyncBufferWrite*>(p.get())) {
+      bytes += sizeof(AsyncBufferWrite);
+    } else if (dynamic_cast<const EventRecord*>(p.get())) {
+      bytes += sizeof(EventRecord);
+    } else if (dynamic_cast<const WaitForEvent*>(p.get())) {
+      bytes += sizeof(WaitForEvent);
+    } else {
+      bytes += sizeof(Trace);
+    }
+    bytes += p->source.instruction.capacity();
+  }
+  return bytes;
+}
 bool ConcurrencyTracer::Buffer::operator==(const Buffer& another) const {
   if (device_ordinal != another.device_ordinal) return false;
   if (slice != another.slice) return false;
