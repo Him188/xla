@@ -107,6 +107,11 @@ absl::Status Run() {
   bool enable_trace = absl::GetFlag(FLAGS_trace);
   int num_replicas = absl::GetFlag(FLAGS_replicas);
 
+  std::cout << "Using input file: " << path << std::endl;
+  std::cout << "enable_trace: " << enable_trace << std::endl;
+  std::cout << "num_replicas: " << num_replicas << std::endl;
+
+
   std::string text;
   TF_RETURN_IF_ERROR(tsl::ReadFileToString(tsl::Env::Default(), path, &text));
 
