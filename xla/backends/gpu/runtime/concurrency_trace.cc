@@ -33,6 +33,9 @@ static const stream_executor::gpu::CudaEvent& AssertCuda(
 constexpr bool ENABLE_LOGS = false;
 
 ConcurrencyTracer::ConcurrencyTracer() = default;
+ConcurrencyTracer::ConcurrencyTracer(ConcurrencyTracer&& other) noexcept
+    : trace_(std::move(other.trace_)) {
+}
 ConcurrencyTracer::~ConcurrencyTracer() = default;
 void ConcurrencyTracer::RecordAsyncBufferAccesses(
     const absl::Span<const NcclCollectiveThunk::Buffer> buffers,
