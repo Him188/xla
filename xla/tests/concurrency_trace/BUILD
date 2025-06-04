@@ -56,7 +56,6 @@ xla_test(
         ":concurrency_test_base",
         "//xla:test",
         "//xla/hlo/testlib:test",
-        "@stablehlo//:register",
         "//xla/tests/tg:test_util",
         "//xla/tools/hlo_opt:gpu_opt",
         "//xla/tsl/lib/core:status_test_util",
@@ -65,5 +64,25 @@ xla_test(
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Parser",
+        "@stablehlo//:register",
+    ],
+)
+
+xla_cc_binary(
+    name = "tracer_perf_main",
+    testonly = True,
+    srcs = ["tracer_perf_main.cc"],
+    deps = [
+        "//xla:debug_options_flags",
+        "//xla/backends/gpu/runtime:concurrency_tracer",
+        "//xla/hlo/testlib:verified_hlo_module",
+        "//xla/pjrt/gpu:se_gpu_pjrt_client",
+        "//xla/tests:test_utils",
+        "//xla/tools/hlo_opt:gpu_opt",
+        "@com_google_absl//absl/flags:parse",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Parser",
+        "@stablehlo//:register",
     ],
 )
