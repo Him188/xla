@@ -30,6 +30,7 @@
 ABSL_FLAG(std::string, input, "", "Path to HLO or StableHLO file");
 ABSL_FLAG(bool, stablehlo, false, "Input file is StableHLO (MLIR) format");
 ABSL_FLAG(bool, trace, true, "Enable concurrency tracer");
+ABSL_FLAG(int, replicas, 2, "Number of replicas");
 
 namespace xla {
 
@@ -47,7 +48,7 @@ absl::StatusOr<std::unique_ptr<VerifiedHloModule>> ParseHlo(
     absl::string_view hlo_text) {
   HloModuleConfig config;
   config.set_debug_options(DefaultDebugOptionsIgnoringFlags());
-  config.set_replica_count(1);
+  config.set_replica_count(absl::GetFlag(FLAGS_replicas));
   config.set_num_partitions(1);
   auto module = std::make_unique<VerifiedHloModule>(
       "module", config,
@@ -104,6 +105,7 @@ absl::Status Run() {
   }
   bool use_stablehlo = absl::GetFlag(FLAGS_stablehlo);
   bool enable_trace = absl::GetFlag(FLAGS_trace);
+  int num_replicas = absl::GetFlag(FLAGS_replicas);
 
   std::string text;
   TF_RETURN_IF_ERROR(tsl::ReadFileToString(tsl::Env::Default(), path, &text));
@@ -113,10 +115,9 @@ absl::Status Run() {
 
   CompileOptions copts;
   auto& eb = copts.executable_build_options;
-  eb.set_num_replicas(1);
+  eb.set_num_replicas(num_replicas);
   eb.set_num_partitions(1);
-  TF_ASSIGN_OR_RETURN(const auto device_assignment,
-                      client->GetDefaultDeviceAssignment(1, 1));
+  TF_ASSIGN_OR_RETURN(const auto device_assignment, client->GetDefaultDeviceAssignment(num_replicas, 1));
   eb.set_device_assignment(device_assignment);
   DebugOptions debug = DefaultDebugOptionsIgnoringFlags();
   debug.set_xla_gpu_enable_latency_hiding_scheduler(true);
@@ -153,15 +154,15 @@ absl::Status Run() {
   if (!use_stablehlo) {
     // Use HLO module shapes for argument generation
     TF_ASSIGN_OR_RETURN(auto module, ParseHlo(text));
-    TF_ASSIGN_OR_RETURN(auto args, MakeFakeArguments(module.get(), &rng));
-    args_per_device.push_back(std::move(args));
+    TF_ASSIGN_OR_RETURN(auto args, MakeFakeArgumentsForDevices(module.get(), num_replicas));
+    args_per_device = std::move(args);
   } else {
     // For StableHLO we cannot easily infer shapes; require XLA HLO parsing
     // via executable->GetHloModules().
     TF_ASSIGN_OR_RETURN(auto hlo_modules, executable->GetHloModules());
     const HloModule* mod = hlo_modules.at(0).get();
-    TF_ASSIGN_OR_RETURN(auto args, MakeFakeArguments(mod, &rng));
-    args_per_device.push_back(std::move(args));
+    TF_ASSIGN_OR_RETURN(auto args, MakeFakeArgumentsForDevices(mod, num_replicas));
+    args_per_device = std::move(args);
   }
 
   auto arg_slices = MakeFakeArgumentSlices(args_per_device);
