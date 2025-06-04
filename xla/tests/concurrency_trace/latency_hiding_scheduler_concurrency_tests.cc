@@ -6,6 +6,7 @@
 #include "mlir/Parser/Parser.h"
 #include "stablehlo/dialect/Register.h"
 #include "xla/backends/gpu/runtime/concurrency_trace.h"
+#include "xla/backends/gpu/runtime/executable_stats.h"
 #include "xla/hlo/builder/lib/arithmetic.h"
 #include "xla/hlo/builder/xla_builder.h"
 #include "xla/literal.h"
@@ -139,6 +140,9 @@ protected:
       std::vector<double> traced_times;
       std::vector<size_t> traced_memory;
       std::vector<size_t> tracer_memory;
+      gpu::ExecutableStats exec_stats;
+      gpu::ConcurrencyTracer::TraceStats trace_stats;
+      bool stats_collected = false;
 
       ExecuteOptions base_opts;
       base_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
@@ -203,6 +207,13 @@ protected:
         tracer_memory.push_back(tracer.GetApproximateMemoryUsage());
         auto races = tracer.DetectDataRaces();
         ASSERT_EQ(races.empty(), !expect_race);
+        if (!stats_collected) {
+          auto exec_stats_or = gpu::GetExecutableStats(exe.get());
+          if (exec_stats_or.ok())
+            exec_stats = *exec_stats_or;
+          trace_stats = tracer.GetTraceStats();
+          stats_collected = true;
+        }
         exe->Delete();
       }
 
@@ -247,6 +258,28 @@ protected:
       os << "    \"stderr_memory_delta_bytes\": " << traced_mem_err << ",\n";
       os << "    \"avg_tracer_memory_usage_bytes\": " << tracer_mem_mean << ",\n";
       os << "    \"stderr_tracer_memory_usage_bytes\": " << tracer_mem_err << "\n";
+      os << "  },\n";
+      os << "  \"trace_stats\": {\n";
+      os << "    \"buffer_reads\": " << trace_stats.buffer_reads << ",\n";
+      os << "    \"async_buffer_reads\": " << trace_stats.async_buffer_reads << ",\n";
+      os << "    \"buffer_writes\": " << trace_stats.buffer_writes << ",\n";
+      os << "    \"async_buffer_writes\": " << trace_stats.async_buffer_writes << ",\n";
+      os << "    \"event_records\": " << trace_stats.event_records << ",\n";
+      os << "    \"wait_for_events\": " << trace_stats.wait_for_events << ",\n";
+      os << "    \"unique_streams\": " << trace_stats.unique_streams << "\n";
+      os << "  },\n";
+      os << "  \"executable_stats\": {\n";
+      os << "    \"hlo_instruction_count\": " << exec_stats.hlo_instruction_count << ",\n";
+      os << "    \"static_buffer_footprint_bytes\": " << exec_stats.static_buffer_footprint_bytes << ",\n";
+      os << "    \"thunk_counts\": {";
+      bool first = true;
+      for (const auto &kv : exec_stats.thunk_counts) {
+        if (!first)
+          os << ", ";
+        os << "\\\"" << kv.first << "\\\": " << kv.second;
+        first = false;
+      }
+      os << "}\n";
       os << "  }\n";
       os << "}";
       std::cout << os.str() << std::endl;

@@ -3,6 +3,9 @@
 
 #include "nccl_all_reduce_thunk.h"
 #include "thunk.h"
+#include <string>
+#include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 
 namespace xla::gpu {
 
@@ -34,6 +37,18 @@ class ConcurrencyTracer {
   // Returns an approximation of the memory used to store the collected traces
   // in bytes.  This method is thread-safe.
   size_t GetApproximateMemoryUsage();
+
+  struct TraceStats {
+    size_t buffer_reads = 0;
+    size_t async_buffer_reads = 0;
+    size_t buffer_writes = 0;
+    size_t async_buffer_writes = 0;
+    size_t event_records = 0;
+    size_t wait_for_events = 0;
+    size_t unique_streams = 0;
+  };
+
+  TraceStats GetTraceStats();
 
   enum class AccessKind { kRead, kWrite };
 

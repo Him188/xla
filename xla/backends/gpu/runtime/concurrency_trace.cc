@@ -3,6 +3,7 @@
 #include <iostream>
 #include <utility>
 
+#include "absl/container/flat_hash_set.h"
 #include "copy_thunk.h"
 #include "gemm_thunk.h"
 #include "kernel_thunk.h"
@@ -273,6 +274,37 @@ size_t ConcurrencyTracer::GetApproximateMemoryUsage() {
     bytes += p->source.instruction.capacity();
   }
   return bytes;
+}
+
+ConcurrencyTracer::TraceStats ConcurrencyTracer::GetTraceStats() {
+  std::lock_guard lock(mutex_);
+  TraceStats stats;
+  absl::flat_hash_set<StreamId> streams;
+  for (const auto& p : trace_) {
+    if (auto* t = dynamic_cast<const BufferRead*>(p.get()); t) {
+      stats.buffer_reads++;
+      streams.insert(t->stream_id);
+    } else if (auto* t = dynamic_cast<const AsyncBufferRead*>(p.get()); t) {
+      stats.async_buffer_reads++;
+      streams.insert(t->source_stream_id);
+      streams.insert(t->async_stream_id);
+    } else if (auto* t = dynamic_cast<const BufferWrite*>(p.get()); t) {
+      stats.buffer_writes++;
+      streams.insert(t->stream_id);
+    } else if (auto* t = dynamic_cast<const AsyncBufferWrite*>(p.get()); t) {
+      stats.async_buffer_writes++;
+      streams.insert(t->source_stream_id);
+      streams.insert(t->async_stream_id);
+    } else if (auto* t = dynamic_cast<const EventRecord*>(p.get()); t) {
+      stats.event_records++;
+      streams.insert(t->stream_id);
+    } else if (auto* t = dynamic_cast<const WaitForEvent*>(p.get()); t) {
+      stats.wait_for_events++;
+      streams.insert(t->stream_id);
+    }
+  }
+  stats.unique_streams = streams.size();
+  return stats;
 }
 bool ConcurrencyTracer::Buffer::operator==(const Buffer& another) const {
   if (device_ordinal != another.device_ordinal) return false;

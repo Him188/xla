@@ -60,6 +60,18 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "executable_stats",
+    srcs = ["executable_stats.cc"],
+    hdrs = ["executable_stats.h"],
+    deps = [
+        "//xla/pjrt:pjrt_stream_executor_client",
+        "//xla/service/gpu:gpu_executable",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status:statusor",
+    ],
+)
+
 #===-------------------------------------------------------------------------------------------===//
 # Command Buffer Integration
 #===-------------------------------------------------------------------------------------------===//

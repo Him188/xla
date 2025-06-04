@@ -55,6 +55,7 @@ xla_test(
     deps = [
         ":concurrency_test_base",
         "//xla:test",
+        "//xla/backends/gpu/runtime:executable_stats",
         "//xla/hlo/testlib:test",
         "//xla/mlir_hlo:hlo_dialect_registration",
         "//xla/tests/tg:test_util",
@@ -76,6 +77,7 @@ xla_cc_binary(
     deps = [
         "//xla:debug_options_flags",
         "//xla/backends/gpu/runtime:concurrency_tracer",
+        "//xla/backends/gpu/runtime:executable_stats",
         "//xla/hlo/testlib:verified_hlo_module",
         "//xla/mlir_hlo:hlo_dialect_registration",
         "//xla/pjrt/gpu:se_gpu_pjrt_client",
