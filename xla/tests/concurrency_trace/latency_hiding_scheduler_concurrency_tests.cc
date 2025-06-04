@@ -22,15 +22,12 @@
 
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
-#include <cmath>
 #include <cstdio>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
-#include <numeric>
 #include <string>
 #include <sys/resource.h>
 #include <unistd.h>
-#include <vector>
 
 namespace xla {
 
@@ -80,23 +77,6 @@ protected:
     return rss * sysconf(_SC_PAGESIZE);
   }
 
-  static double Mean(const std::vector<double> &values) {
-    if (values.empty())
-      return 0.0;
-    const double sum = std::accumulate(values.begin(), values.end(), 0.0);
-    return sum / values.size();
-  }
-
-  static double StdError(const std::vector<double> &values, double mean) {
-    if (values.size() <= 1)
-      return 0.0;
-    double var = 0.0;
-    for (double v : values)
-      var += (v - mean) * (v - mean);
-    var /= (values.size() - 1);
-    return std::sqrt(var / values.size());
-  }
-
   void RunTest(const std::string_view hlo_string, bool expect_race) {
     setenv("NCCL_DEBUG", "INFO", 1);
 
@@ -131,82 +111,41 @@ protected:
     } else {
       ExecuteOptions base_opts;
       base_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
+      size_t rss_before_base = GetCurrentRSSBytes();
+      absl::Time t0 = absl::Now();
+      TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, exec_args, base_opts));
+      absl::Time t1 = absl::Now();
+      size_t rss_after_base = GetCurrentRSSBytes();
+      double base_ms = absl::ToDoubleMilliseconds(t1 - t0);
+      size_t base_delta = rss_after_base - rss_before_base;
 
-      int warmup = 1;
-      if (const char *env = getenv("XLA_WARMUP_ITERS"))
-        warmup = std::atoi(env);
-      constexpr int kIters = 10;
+      gpu::ConcurrencyTracer tracer;
+      ExecuteOptions exec_opts;
+      exec_opts.gpu_concurrency_tracer = &tracer;
+      exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
+      size_t rss_before_traced = GetCurrentRSSBytes();
+      absl::Time t2 = absl::Now();
+      TF_ASSERT_OK_AND_ASSIGN(auto outs_tr, Execute(*exe, exec_args, exec_opts));
+      absl::Time t3 = absl::Now();
+      size_t rss_after_traced = GetCurrentRSSBytes();
+      double traced_ms = absl::ToDoubleMilliseconds(t3 - t2);
+      size_t traced_delta = rss_after_traced - rss_before_traced;
 
-      for (int i = 0; i < warmup; ++i) {
-        TF_ASSERT_OK(Execute(*exe, exec_args, base_opts).status());
+      xla_test_util::print_gpu_thunk_info(exe.get());
+      auto races = tracer.DetectDataRaces();
+      std::cout << "races=" << races.size() << std::endl;
+      if (!races.empty()) {
+        tracer.PrintDataRaces(std::cout);
       }
-      sleep(1);
+      tracer.PrintTraces(std::cout);
+      ASSERT_EQ(races.empty(), !expect_race);
 
-      std::vector<double> base_times;
-      std::vector<double> base_mem;
-      for (int i = 0; i < kIters; ++i) {
-        size_t rss_before = GetCurrentRSSBytes();
-        absl::Time t0 = absl::Now();
-        TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, exec_args, base_opts));
-        absl::Time t1 = absl::Now();
-        size_t rss_after = GetCurrentRSSBytes();
-        base_times.push_back(absl::ToDoubleMilliseconds(t1 - t0));
-        base_mem.push_back(rss_after - rss_before);
-      }
-      sleep(1);
-
-      for (int i = 0; i < warmup; ++i) {
-        gpu::ConcurrencyTracer tracer;
-        ExecuteOptions warm_opts;
-        warm_opts.gpu_concurrency_tracer = &tracer;
-        warm_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
-        TF_ASSERT_OK(Execute(*exe, exec_args, warm_opts).status());
-      }
-      sleep(1);
-
-      std::vector<double> traced_times;
-      std::vector<double> traced_mem;
-      std::vector<double> tracer_mem_usage;
-      for (int i = 0; i < kIters; ++i) {
-        gpu::ConcurrencyTracer tracer;
-        ExecuteOptions exec_opts;
-        exec_opts.gpu_concurrency_tracer = &tracer;
-        exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
-        size_t rss_before = GetCurrentRSSBytes();
-        absl::Time t0 = absl::Now();
-        TF_ASSERT_OK_AND_ASSIGN(auto outs_tr, Execute(*exe, exec_args, exec_opts));
-        absl::Time t1 = absl::Now();
-        size_t rss_after = GetCurrentRSSBytes();
-        traced_times.push_back(absl::ToDoubleMilliseconds(t1 - t0));
-        traced_mem.push_back(rss_after - rss_before);
-        tracer_mem_usage.push_back(tracer.GetApproximateMemoryUsage());
-        if (i == kIters - 1) {
-          xla_test_util::print_gpu_thunk_info(exe.get());
-          auto races = tracer.DetectDataRaces();
-          std::cout << "races=" << races.size() << std::endl;
-          if (!races.empty()) {
-            tracer.PrintDataRaces(std::cout);
-          }
-          tracer.PrintTraces(std::cout);
-          ASSERT_EQ(races.empty(), !expect_race);
-        }
-      }
-
-      double base_mean = Mean(base_times);
-      double base_err = StdError(base_times, base_mean);
-      double base_mem_mean = Mean(base_mem);
-      double base_mem_err = StdError(base_mem, base_mem_mean);
-
-      double traced_mean = Mean(traced_times);
-      double traced_err = StdError(traced_times, traced_mean);
-      double traced_mem_mean = Mean(traced_mem);
-      double traced_mem_err = StdError(traced_mem, traced_mem_mean);
-      double tracer_mem_mean = Mean(tracer_mem_usage);
-
-      std::string json = absl::StrFormat(
-          R"({"warmup_runs":%d,"iterations":%d,"baseline":{"time_ms":{"mean":%.3f,"stderr":%.3f},"mem_delta_bytes":{"mean":%.0f,"stderr":%.0f}},"traced":{"time_ms":{"mean":%.3f,"stderr":%.3f},"mem_delta_bytes":{"mean":%.0f,"stderr":%.0f},"tracer_mem_bytes":%.0f}})",
-          warmup, kIters, base_mean, base_err, base_mem_mean, base_mem_err, traced_mean, traced_err, traced_mem_mean, traced_mem_err, tracer_mem_mean);
-      std::cout << json << std::endl;
+      std::cout << "Baseline execution time (ms): " << base_ms << std::endl;
+      std::cout << "Traced execution time (ms): " << traced_ms << std::endl;
+      std::cout << "Execution time overhead (ms): " << traced_ms - base_ms << std::endl;
+      std::cout << "Baseline memory delta (bytes): " << base_delta << std::endl;
+      std::cout << "Traced memory delta (bytes): " << traced_delta << std::endl;
+      std::cout << "Tracer memory usage (bytes): " << tracer.GetApproximateMemoryUsage() << std::endl;
     }
   }
 

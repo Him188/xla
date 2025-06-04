@@ -20,7 +20,6 @@ struct ConcurrencyTraceOptions {
 class ConcurrencyTracer {
  public:
   explicit ConcurrencyTracer();
-  explicit ConcurrencyTracer(ConcurrencyTracer&& other) noexcept;
   ~ConcurrencyTracer();
   using EventId = const void*;
   using StreamId = const void*;
