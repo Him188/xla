@@ -7,6 +7,7 @@
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Parser/Parser.h"
+#include "xla/mlir_hlo/mhlo/IR/register.h"
 #include "stablehlo/dialect/Register.h"
 #include "tsl/platform/env.h"
 #include "tsl/platform/init_main.h"
@@ -128,6 +129,7 @@ absl::Status Run() {
   if (use_stablehlo) {
     mlir::DialectRegistry registry;
     mlir::func::registerAllExtensions(registry);
+    mlir::mhlo::registerAllMhloDialects(registry);
     mlir::stablehlo::registerAllDialects(registry);
     mlir::MLIRContext context(registry);
     mlir::BaseScopedDiagnosticHandler diagnostic_handler(&context);
