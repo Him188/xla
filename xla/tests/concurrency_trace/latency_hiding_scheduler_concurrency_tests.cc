@@ -815,6 +815,7 @@ ENTRY entry {
 }
 
 // Device configuration error?
+// https://chatgpt.com/c/68404f9e-60e4-8007-805a-75bf29901924
 //INTERNAL: NCCL operation ncclRecv( recv_buffer.opaque(), ToNcclCount(dtype, count), nccl_dtype, source_rank->value(), comm_, se::gpu::AsGpuStreamValue(stream)) failed: invalid argument (run with NCCL_DEBUG=WARN for details). Last NCCL warning(error) log entry (may be unrelated) 'Recv : invalid root 1 (root should be in the 0..1 range)'.: while running replica 0 and partition 0 of a replicated computation (other replicas may have failed as well).
 // XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests,
 //            ExistingSingleCollectivePermuteAsyncSmallTest) {
