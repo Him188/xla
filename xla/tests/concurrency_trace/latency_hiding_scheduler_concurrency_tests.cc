@@ -115,7 +115,9 @@ protected:
 
       TF_ASSERT_OK_AND_ASSIGN(auto res, prepare_fn());
       auto &exe = res.exe;
-      TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, exec_opts));
+      {
+        TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, exec_opts));
+      }
 
       xla_test_util::print_gpu_thunk_info(exe.get());
       auto races = tracer.DetectDataRaces();
@@ -145,7 +147,9 @@ protected:
       for (int i = 0; i < warmup_iters; ++i) {
         TF_ASSERT_OK_AND_ASSIGN(auto res, prepare_fn());
         auto &exe = res.exe;
-        TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, base_opts));
+        {
+          TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, base_opts));
+        }
         exe->Delete();
       }
 
@@ -154,7 +158,9 @@ protected:
         auto &exe = res.exe;
         size_t rss_before = GetCurrentRSSBytes();
         absl::Time t0 = absl::Now();
-        TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, base_opts));
+        {
+          TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, base_opts));
+        }
         absl::Time t1 = absl::Now();
         size_t rss_after = GetCurrentRSSBytes();
         base_times.push_back(absl::ToDoubleMilliseconds(t1 - t0));
@@ -170,7 +176,9 @@ protected:
         ExecuteOptions exec_opts;
         exec_opts.gpu_concurrency_tracer = &tracer;
         exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
-        TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, exec_opts));
+        {
+          TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, exec_opts));
+        }
         auto races = tracer.DetectDataRaces();
         ASSERT_EQ(races.empty(), !expect_race);
         exe->Delete();
@@ -185,7 +193,9 @@ protected:
         exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
         size_t rss_before = GetCurrentRSSBytes();
         absl::Time t0 = absl::Now();
-        TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, exec_opts));
+        {
+          TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, exec_opts));
+        }
         absl::Time t1 = absl::Now();
         size_t rss_after = GetCurrentRSSBytes();
         traced_times.push_back(absl::ToDoubleMilliseconds(t1 - t0));
