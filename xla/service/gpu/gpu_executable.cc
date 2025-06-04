@@ -356,6 +356,13 @@ absl::Status ExecuteThunks(
     }
   };
 
+  const auto reset_tracer = [&](se::Stream* stream) {
+    if (auto* cuda_stream =
+            dynamic_cast<stream_executor::gpu::CudaStream*>(stream)) {
+      cuda_stream->SetConcurrencyTracer(nullptr);
+    }
+  };
+
   main_stream->SetName("Compute0");
   set_tracer(main_stream);
 
@@ -387,6 +394,22 @@ absl::Status ExecuteThunks(
     cuda_executor->SetConcurrencyTracer(execute_params.concurrency_tracer);
   }
   TF_RETURN_IF_ERROR(thunk_sequence.ExecuteOnStream(execute_params));
+
+  // Reset tracers to avoid dangling pointers after Execute returns.
+  reset_tracer(main_stream);
+  for (const auto& ptr : additional_streams) {
+    reset_tracer(ptr.get());
+  }
+  if (command_buffer_trace_stream) {
+    reset_tracer(command_buffer_trace_stream);
+  }
+  for (auto* stream : async_comms_streams) {
+    if (stream) reset_tracer(stream);
+  }
+  if (const auto cuda_executor =
+          dynamic_cast<stream_executor::gpu::CudaExecutor*>(stream_executor)) {
+    cuda_executor->SetConcurrencyTracer(nullptr);
+  }
 
   return MaybeSyncAndProfile(run_options, execution_timer.get(),
                              block_host_until_done ? main_stream : nullptr);
