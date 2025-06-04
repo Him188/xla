@@ -16,6 +16,7 @@
 #include "xla/pjrt/pjrt_client.h"
 #include "xla/pjrt/plugin/xla_gpu/xla_gpu_client_options.h"
 #include "xla/tests/concurrency_trace/concurrency_test_base.h"
+#include "xla/tests/concurrency_trace/trace_stats.h"
 #include "xla/tests/test_macros.h"
 #include "xla/tests/test_utils.h"
 #include "xla/tests/tg/test_util.h"
@@ -259,28 +260,7 @@ protected:
       os << "    \"avg_tracer_memory_usage_bytes\": " << tracer_mem_mean << ",\n";
       os << "    \"stderr_tracer_memory_usage_bytes\": " << tracer_mem_err << "\n";
       os << "  },\n";
-      os << "  \"trace_stats\": {\n";
-      os << "    \"buffer_reads\": " << trace_stats.buffer_reads << ",\n";
-      os << "    \"async_buffer_reads\": " << trace_stats.async_buffer_reads << ",\n";
-      os << "    \"buffer_writes\": " << trace_stats.buffer_writes << ",\n";
-      os << "    \"async_buffer_writes\": " << trace_stats.async_buffer_writes << ",\n";
-      os << "    \"event_records\": " << trace_stats.event_records << ",\n";
-      os << "    \"wait_for_events\": " << trace_stats.wait_for_events << ",\n";
-      os << "    \"unique_streams\": " << trace_stats.unique_streams << "\n";
-      os << "  },\n";
-      os << "  \"executable_stats\": {\n";
-      os << "    \"hlo_instruction_count\": " << exec_stats.hlo_instruction_count << ",\n";
-      os << "    \"static_buffer_footprint_bytes\": " << exec_stats.static_buffer_footprint_bytes << ",\n";
-      os << "    \"thunk_counts\": {";
-      bool first = true;
-      for (const auto &kv : exec_stats.thunk_counts) {
-        if (!first)
-          os << ", ";
-        os << "\\\"" << kv.first << "\\\": " << kv.second;
-        first = false;
-      }
-      os << "}\n";
-      os << "  }\n";
+      PrintTraceAndExecutableStatsJson(trace_stats, exec_stats, os, 2);
       os << "}";
       std::cout << os.str() << std::endl;
     }

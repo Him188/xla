@@ -43,6 +43,17 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "trace_stats",
+    testonly = True,
+    srcs = ["trace_stats.cc"],
+    hdrs = ["trace_stats.h"],
+    deps = [
+        "//xla/backends/gpu/runtime:concurrency_tracer",
+        "//xla/backends/gpu/runtime:executable_stats",
+    ],
+)
+
 xla_test(
     name = "latency_hiding_scheduler_concurrency_tests",
     srcs = [
@@ -54,6 +65,7 @@ xla_test(
     ],
     deps = [
         ":concurrency_test_base",
+        ":trace_stats",
         "//xla:test",
         "//xla/backends/gpu/runtime:executable_stats",
         "//xla/hlo/testlib:test",
@@ -75,6 +87,7 @@ xla_cc_binary(
     testonly = True,
     srcs = ["tracer_perf_main.cc"],
     deps = [
+        ":trace_stats",
         "//xla:debug_options_flags",
         "//xla/backends/gpu/runtime:concurrency_tracer",
         "//xla/backends/gpu/runtime:executable_stats",
