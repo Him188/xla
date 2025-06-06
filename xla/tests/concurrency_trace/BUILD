@@ -43,6 +43,54 @@ cc_library(
     ],
 )
 
+xla_test(
+    name = "cross_stream_synchronization_tests",
+    srcs = [
+        "cross_stream_synchronization_tests.cc",
+    ],
+    tags = [
+        "requires-gpu-nvidia:2",
+        "test_migrated_to_hlo_runner_pjrt",
+    ],
+    deps = [
+        ":base_concurrency_tests",
+        "//xla:test",
+        "//xla/backends/gpu/runtime:executable_stats",
+        "//xla/hlo/testlib:test",
+        "//xla/mlir_hlo:hlo_dialect_registration",
+        "//xla/tests/tg:test_util",
+        "//xla/tools/hlo_opt:gpu_opt",
+        "//xla/tsl/lib/core:status_test_util",
+        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Parser",
+        "@stablehlo//:register",
+    ],
+)
+
+cc_library(
+    name = "base_concurrency_tests",
+    testonly = True,
+    srcs = ["base_concurrency_tests.cc"],
+    hdrs = ["base_concurrency_tests.h"],
+    deps = [
+        ":concurrency_test_base",
+        ":trace_stats",
+        "//xla:test",
+        "//xla/backends/gpu/runtime:executable_stats",
+        "//xla/hlo/testlib:test",
+        "//xla/mlir_hlo:hlo_dialect_registration",
+        "//xla/tests:test_utils",
+        "//xla/tests/tg:test_util",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Parser",
+        "@stablehlo//:register",
+    ],
+)
+
 cc_library(
     name = "trace_stats",
     testonly = True,
@@ -64,6 +112,7 @@ xla_test(
         "test_migrated_to_hlo_runner_pjrt",
     ],
     deps = [
+        ":base_concurrency_tests",
         ":concurrency_test_base",
         ":trace_stats",
         "//xla:test",
