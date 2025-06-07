@@ -43,7 +43,7 @@ void PrintTraceAndExecutableStatsJson(const gpu::ThunkSanitizer::TraceStats &tra
   for (const auto &kv : exec_stats.thunk_counts) {
     if (!first)
       os << ", ";
-    os << "\\\"" << kv.first << "\\\": " << kv.second;
+    os << "\"" << kv.first << "\": " << kv.second;
     first = false;
   }
   os << "}\n";

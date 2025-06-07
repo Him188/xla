@@ -178,35 +178,33 @@ absl::Status Run() {
   std::cout << "Compilation memory delta (bytes): " << (rss_after_compile - rss_before_compile) << std::endl;
   std::cout << "Execution memory delta (bytes): " << (rss_after_exec - rss_before_exec) << std::endl;
 
-  if (enable_trace) {
-    std::cout << "Tracer memory usage (bytes): " << tracer.GetApproximateMemoryUsage() << std::endl;
-    absl::Time td0 = absl::Now();
-    auto races = tracer.DetectDataRaces();
-    absl::Time td1 = absl::Now();
-    std::cout << "Race detection time (ms): " << absl::ToDoubleMilliseconds(td1 - td0) << std::endl;
-    std::cout << "races=" << races.size() << std::endl;
+  std::cout << "Tracer memory usage (bytes): " << tracer.GetApproximateMemoryUsage() << std::endl;
+  absl::Time td0 = absl::Now();
+  auto races = tracer.DetectDataRaces();
+  absl::Time td1 = absl::Now();
+  std::cout << "Race detection time (ms): " << absl::ToDoubleMilliseconds(td1 - td0) << std::endl;
+  std::cout << "races=" << races.size() << std::endl;
 
-    auto exec_stats_or = gpu::GetExecutableStats(executable.get());
-    if (exec_stats_or.ok()) {
-      RunPerfStats perf;
-      perf.compilation_time_ms = absl::ToDoubleMilliseconds(compile_dur);
-      perf.execution_time_ms = absl::ToDoubleMilliseconds(exec_dur);
-      perf.compilation_memory_delta_bytes = rss_after_compile - rss_before_compile;
-      perf.execution_memory_delta_bytes = rss_after_exec - rss_before_exec;
-      perf.tracer_memory_usage_bytes = tracer.GetApproximateMemoryUsage();
-      perf.race_detection_time_ms = absl::ToDoubleMilliseconds(td1 - td0);
-      perf.races = races.size();
+  auto exec_stats_or = gpu::GetExecutableStats(executable.get());
+  if (exec_stats_or.ok()) {
+    RunPerfStats perf;
+    perf.compilation_time_ms = absl::ToDoubleMilliseconds(compile_dur);
+    perf.execution_time_ms = absl::ToDoubleMilliseconds(exec_dur);
+    perf.compilation_memory_delta_bytes = rss_after_compile - rss_before_compile;
+    perf.execution_memory_delta_bytes = rss_after_exec - rss_before_exec;
+    perf.tracer_memory_usage_bytes = tracer.GetApproximateMemoryUsage();
+    perf.race_detection_time_ms = absl::ToDoubleMilliseconds(td1 - td0);
+    perf.races = races.size();
 
-      std::ostringstream os;
-      os << "### BEGIN_PERFORMANCE_STATS ###\n";
-      os << "{\n";
-      PrintPerfStatsJson(perf, os, 2);
-      os << ",\n";
-      PrintTraceAndExecutableStatsJson(tracer.GetTraceStats(), *exec_stats_or, os, 2);
-      os << "}\n";
-      os << "### END_PERFORMANCE_STATS ###" << std::endl;
-      std::cout << os.str() << std::endl;
-    }
+    std::ostringstream os;
+    os << "### BEGIN_PERFORMANCE_STATS ###\n";
+    os << "{\n";
+    PrintPerfStatsJson(perf, os, 2);
+    os << ",\n";
+    PrintTraceAndExecutableStatsJson(tracer.GetTraceStats(), *exec_stats_or, os, 2);
+    os << "}\n";
+    os << "### END_PERFORMANCE_STATS ###" << std::endl;
+    std::cout << os.str() << std::endl;
   }
 
   return absl::OkStatus();
