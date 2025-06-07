@@ -35,6 +35,65 @@ constexpr bool ENABLE_LOGS = false;
 
 ConcurrencyTracer::ConcurrencyTracer() = default;
 ConcurrencyTracer::~ConcurrencyTracer() = default;
+
+void ConcurrencyTracer::AddBufferRead(StreamId stream_id, const Buffer& buffer,
+                                      SourceInfo source) {
+  std::lock_guard lock(mutex_);
+  VectorClock vc = stream_clock_[stream_id];
+  AdvanceStream(stream_id);
+  trace_.push_back(std::make_unique<BufferRead>(vc, stream_id, buffer, source));
+}
+
+void ConcurrencyTracer::AddBufferWrite(StreamId stream_id, const Buffer& buffer,
+                                       SourceInfo source) {
+  std::lock_guard lock(mutex_);
+  VectorClock vc = stream_clock_[stream_id];
+  AdvanceStream(stream_id);
+  trace_.push_back(std::make_unique<BufferWrite>(vc, stream_id, buffer, source));
+}
+
+void ConcurrencyTracer::AddAsyncBufferRead(StreamId source_stream_id,
+                                           StreamId async_stream_id,
+                                           EventId event_id, const Buffer& buffer,
+                                           SourceInfo source) {
+  std::lock_guard lock(mutex_);
+  JoinStream(async_stream_id, stream_clock_[source_stream_id]);
+  VectorClock vc = stream_clock_[async_stream_id];
+  AdvanceStream(async_stream_id);
+  trace_.push_back(std::make_unique<AsyncBufferRead>(vc, source_stream_id,
+                                                    async_stream_id, event_id,
+                                                    buffer, source));
+}
+
+void ConcurrencyTracer::AddAsyncBufferWrite(StreamId source_stream_id,
+                                            StreamId async_stream_id,
+                                            EventId event_id,
+                                            const Buffer& buffer,
+                                            SourceInfo source) {
+  std::lock_guard lock(mutex_);
+  JoinStream(async_stream_id, stream_clock_[source_stream_id]);
+  VectorClock vc = stream_clock_[async_stream_id];
+  AdvanceStream(async_stream_id);
+  trace_.push_back(std::make_unique<AsyncBufferWrite>(vc, source_stream_id,
+                                                     async_stream_id, event_id,
+                                                     buffer, source));
+}
+
+void ConcurrencyTracer::AddEventRecord(StreamId stream_id, EventId event_id) {
+  std::lock_guard lock(mutex_);
+  VectorClock vc = stream_clock_[stream_id];
+  event_clock_[event_id] = vc;
+  AdvanceStream(stream_id);
+  trace_.push_back(std::make_unique<EventRecord>(vc, stream_id, event_id));
+}
+
+void ConcurrencyTracer::AddWaitForEvent(StreamId stream_id, EventId event_id) {
+  std::lock_guard lock(mutex_);
+  JoinStream(stream_id, event_clock_[event_id]);
+  VectorClock vc = stream_clock_[stream_id];
+  AdvanceStream(stream_id);
+  trace_.push_back(std::make_unique<WaitForEvent>(vc, stream_id, event_id));
+}
 void ConcurrencyTracer::RecordAsyncBufferAccesses(
     const absl::Span<const NcclCollectiveThunk::Buffer> buffers,
     const stream_executor::Event* const event,
@@ -50,18 +109,15 @@ void ConcurrencyTracer::RecordAsyncBufferAccesses(
   // Async
   for (const auto& buf : buffers) {
     if (buf.source_buffer != buf.destination_buffer) {
-      AddTrace<AsyncBufferRead>(
-          stream->platform_specific_handle().stream,
-          async_stream.platform_specific_handle().stream, completion_event_id,
-          Buffer{device_ordinal, buf.source_buffer}, source);
-    } else {
-      // Buffer aliased, we only record a write.
+      AddAsyncBufferRead(stream->platform_specific_handle().stream,
+                         async_stream.platform_specific_handle().stream,
+                         completion_event_id,
+                         Buffer{device_ordinal, buf.source_buffer}, source);
     }
-
-    AddTrace<AsyncBufferWrite>(
-        stream->platform_specific_handle().stream,
-        async_stream.platform_specific_handle().stream, completion_event_id,
-        Buffer{device_ordinal, buf.destination_buffer}, source);
+    AddAsyncBufferWrite(stream->platform_specific_handle().stream,
+                        async_stream.platform_specific_handle().stream,
+                        completion_event_id,
+                        Buffer{device_ordinal, buf.destination_buffer}, source);
   }
 }
 void ConcurrencyTracer::RecordSyncBufferAccesses(
@@ -69,11 +125,10 @@ void ConcurrencyTracer::RecordSyncBufferAccesses(
     const stream_executor::Stream* stream, const int device_ordinal,
     SourceInfo source) {
   for (const auto& buf : buffers) {
-    AddTrace<BufferRead>(stream->platform_specific_handle().stream,
-                         Buffer{device_ordinal, buf.source_buffer}, source);
-    AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
-                          Buffer{device_ordinal, buf.destination_buffer},
-                          source);
+    AddBufferRead(stream->platform_specific_handle().stream,
+                  Buffer{device_ordinal, buf.source_buffer}, source);
+    AddBufferWrite(stream->platform_specific_handle().stream,
+                   Buffer{device_ordinal, buf.destination_buffer}, source);
   }
 }
 void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
@@ -96,12 +151,12 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
 
   /* ---------------------------- ordinary thunks --------------------------- */
   if (THUNK_CASE(GemmThunk)) {
-    AddTrace<BufferRead>(stream->platform_specific_handle().stream,
-                         Buffer{device_ordinal, t->lhs_buffer()}, source);
-    AddTrace<BufferRead>(stream->platform_specific_handle().stream,
-                         Buffer{device_ordinal, t->rhs_buffer()}, source);
-    AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
-                          Buffer{device_ordinal, t->output_buffer()}, source);
+    AddBufferRead(stream->platform_specific_handle().stream,
+                  Buffer{device_ordinal, t->lhs_buffer()}, source);
+    AddBufferRead(stream->platform_specific_handle().stream,
+                  Buffer{device_ordinal, t->rhs_buffer()}, source);
+    AddBufferWrite(stream->platform_specific_handle().stream,
+                   Buffer{device_ordinal, t->output_buffer()}, source);
 
   } else if (THUNK_CASE(gpu::KernelThunk)) {
     const auto& arguments = t->arguments();
@@ -109,20 +164,20 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
     // reads first
     for (int i = 0; i < arguments.size(); ++i)
       if (!t->written()[i])
-        AddTrace<BufferRead>(stream->platform_specific_handle().stream,
-                             Buffer{device_ordinal, arguments[i]}, source);
+        AddBufferRead(stream->platform_specific_handle().stream,
+                      Buffer{device_ordinal, arguments[i]}, source);
 
     // writes
     for (int i = 0; i < arguments.size(); ++i)
       if (t->written()[i])
-        AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
-                              Buffer{device_ordinal, arguments[i]}, source);
+        AddBufferWrite(stream->platform_specific_handle().stream,
+                       Buffer{device_ordinal, arguments[i]}, source);
 
   } else if (THUNK_CASE(gpu::CopyThunk)) {
-    AddTrace<BufferRead>(stream->platform_specific_handle().stream,
-                         Buffer{device_ordinal, t->source()}, source);
-    AddTrace<BufferWrite>(stream->platform_specific_handle().stream,
-                          Buffer{device_ordinal, t->destination()}, source);
+    AddBufferRead(stream->platform_specific_handle().stream,
+                  Buffer{device_ordinal, t->source()}, source);
+    AddBufferWrite(stream->platform_specific_handle().stream,
+                   Buffer{device_ordinal, t->destination()}, source);
 
     /* -------------------------- NCCL collective ⇩ ---------------------------
      */
@@ -175,8 +230,8 @@ void ConcurrencyTracer::OnStreamEventRecord(const se::Stream& stream,
               << "E_" << AssertCuda(event).GetHandle() << std::endl;
   }
 
-  AddTrace<EventRecord>(stream.platform_specific_handle().stream,
-                        static_cast<void*>(AssertCuda(&event).GetHandle()));
+  AddEventRecord(stream.platform_specific_handle().stream,
+                 static_cast<void*>(AssertCuda(&event).GetHandle()));
 }
 
 void ConcurrencyTracer::OnStreamEventWait(const se::Stream& stream,
@@ -186,11 +241,11 @@ void ConcurrencyTracer::OnStreamEventWait(const se::Stream& stream,
               << "S_" << stream.GetName() << std::endl;
   }
 
-  AddTrace<WaitForEvent>(stream.platform_specific_handle().stream,
-                         static_cast<void*>(AssertCuda(&event).GetHandle()));
+  AddWaitForEvent(stream.platform_specific_handle().stream,
+                  static_cast<void*>(AssertCuda(&event).GetHandle()));
 }
 
-void ConcurrencyTracer::PrintTraces(std::ostream& os) {
+void ConcurrencyTracer::PrintTraces(std::ostream& os) const {
   // Protect the trace_ vector while we read from it.
   std::lock_guard lock(mutex_);
 
@@ -251,7 +306,7 @@ void ConcurrencyTracer::PrintTraces(std::ostream& os) {
   os.flags(old_flags);
 }
 
-size_t ConcurrencyTracer::GetApproximateMemoryUsage() {
+size_t ConcurrencyTracer::GetApproximateMemoryUsage() const {
   std::lock_guard lock(mutex_);
   size_t bytes =
       sizeof(*this) + trace_.capacity() * sizeof(std::unique_ptr<Trace>);
@@ -276,7 +331,7 @@ size_t ConcurrencyTracer::GetApproximateMemoryUsage() {
   return bytes;
 }
 
-ConcurrencyTracer::TraceStats ConcurrencyTracer::GetTraceStats() {
+ConcurrencyTracer::TraceStats ConcurrencyTracer::GetTraceStats() const {
   std::lock_guard lock(mutex_);
   TraceStats stats;
   absl::flat_hash_set<StreamId> streams;
@@ -322,27 +377,29 @@ bool ConcurrencyTracer::Buffer::Overlaps(const Buffer& another) const {
 }
 std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
     const {
-  /* ── Collect every memory access (sync + async) ───────────────────── */
+  std::lock_guard lock(mutex_);
+
   std::vector<MemAccessInfo> acc;
   acc.reserve(trace_.size());
   absl::flat_hash_map<BufferHandle, std::vector<size_t>> by_buffer;
 
   for (size_t i = 0; i < trace_.size(); ++i) {
     if (auto* r = dynamic_cast<const BufferRead*>(trace_[i].get()); r) {
-      acc.push_back({r->stream_id, r->buffer, AccessKind::kRead, i, r->source});
+      acc.push_back({r->stream_id, r->buffer, AccessKind::kRead, i, r->source,
+                     r->vc});
       by_buffer[{r->buffer.device_ordinal,
                  r->buffer.slice.allocation()->index()}]
           .push_back(acc.size() - 1);
     } else if (auto* w = dynamic_cast<const BufferWrite*>(trace_[i].get()); w) {
-      acc.push_back(
-          {w->stream_id, w->buffer, AccessKind::kWrite, i, w->source});
+      acc.push_back({w->stream_id, w->buffer, AccessKind::kWrite, i, w->source,
+                     w->vc});
       by_buffer[{w->buffer.device_ordinal,
                  w->buffer.slice.allocation()->index()}]
           .push_back(acc.size() - 1);
     } else if (auto* ar = dynamic_cast<const AsyncBufferRead*>(trace_[i].get());
                ar) {
       acc.push_back({ar->async_stream_id, ar->buffer, AccessKind::kRead, i,
-                     ar->source, ar->completion_event_id});
+                     ar->source, ar->vc, ar->completion_event_id});
       by_buffer[{ar->buffer.device_ordinal,
                  ar->buffer.slice.allocation()->index()}]
           .push_back(acc.size() - 1);
@@ -350,32 +407,17 @@ std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
                    dynamic_cast<const AsyncBufferWrite*>(trace_[i].get());
                aw) {
       acc.push_back({aw->async_stream_id, aw->buffer, AccessKind::kWrite, i,
-                     aw->source, aw->completion_event_id});
+                     aw->source, aw->vc, aw->completion_event_id});
       by_buffer[{aw->buffer.device_ordinal,
                  aw->buffer.slice.allocation()->index()}]
           .push_back(acc.size() - 1);
     }
   }
 
-  /* ── Build HB-graph once ───────────────────────────────────────────── */
-  EdgeList hb = BuildHappensBeforeGraph();
-
-  auto happens_before = [&](const size_t a, const size_t b) {
-    absl::flat_hash_set<size_t> seen;
-    std::vector stack = {a};
-    while (!stack.empty()) {
-      size_t cur = stack.back();
-      stack.pop_back();
-      if (cur == b) return true;
-      if (!seen.insert(cur).second) continue;
-      auto it = hb.find(cur);
-      if (it == hb.end()) continue;
-      stack.insert(stack.end(), it->second.begin(), it->second.end());
-    }
-    return false;
+  auto happens_before = [](const VectorClock& a, const VectorClock& b) {
+    return a.HappensBefore(b);
   };
 
-  /* ── Race detection using per-buffer index ────────────────────────── */
   std::vector<DataRace> races;
   for (const auto& [handle, indices] : by_buffer) {
     std::vector<size_t> active;
@@ -386,7 +428,7 @@ std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
       for (size_t prev_idx : active) {
         const auto& prev = acc[prev_idx];
 
-        if (happens_before(prev.trace_idx, cur.trace_idx)) {
+        if (happens_before(prev.vc, cur.vc)) {
           continue;  // ordered by HB
         }
         next_active.push_back(prev_idx);
@@ -394,8 +436,7 @@ std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
         if (prev.stream_id == cur.stream_id) continue;
         if (!prev.buffer.Overlaps(cur.buffer)) continue;
         if (!(prev.IsWrite() || cur.IsWrite())) continue;
-        if (!happens_before(prev.trace_idx, cur.trace_idx) &&
-            !happens_before(cur.trace_idx, prev.trace_idx)) {
+        if (prev.vc.Concurrent(cur.vc)) {
           races.push_back({prev, cur});
         }
       }

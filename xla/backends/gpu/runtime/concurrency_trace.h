@@ -7,6 +7,7 @@
 #include <vector>
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/container/btree_map.h"
 
 namespace xla::gpu {
 
@@ -33,11 +34,11 @@ class ConcurrencyTracer {
   void OnStreamEventRecord(const se::Stream& stream, const se::Event& event);
   void OnStreamEventWait(const se::Stream& stream, const se::Event& event);
 
-  void PrintTraces(std::ostream& os);
+  void PrintTraces(std::ostream& os) const;
 
   // Returns an approximation of the memory used to store the collected traces
   // in bytes.  This method is thread-safe.
-  size_t GetApproximateMemoryUsage();
+  size_t GetApproximateMemoryUsage() const;
 
   struct TraceStats {
     size_t buffer_reads = 0;
@@ -49,9 +50,30 @@ class ConcurrencyTracer {
     size_t unique_streams = 0;
   };
 
-  TraceStats GetTraceStats();
+  TraceStats GetTraceStats() const;
 
   enum class AccessKind { kRead, kWrite };
+
+  struct VectorClock {
+    absl::flat_hash_map<StreamId, uint64_t> clk;
+
+    void Join(const VectorClock& other) {
+      for (const auto& [s, t] : other.clk)
+        clk[s] = std::max(clk[s], t);
+    }
+
+    bool HappensBefore(const VectorClock& other) const {
+      for (const auto& [s, t] : clk) {
+        auto it = other.clk.find(s);
+        if (const uint64_t ot = it == other.clk.end() ? 0 : it->second; t > ot) return false;
+      }
+      return true;
+    }
+
+    bool Concurrent(const VectorClock& other) const {
+      return !HappensBefore(other) && !other.HappensBefore(*this);
+    }
+  };
 
   struct SourceInfo final {
     const Thunk* thunk = nullptr;
@@ -97,17 +119,19 @@ class ConcurrencyTracer {
     const SourceInfo source;
     const EventId completion_event_id =
         nullptr;  // if not null, it's an async event.
+    VectorClock vc;
 
     MemAccessInfo(const StreamId stream_id, const Buffer& buffer,
                   const AccessKind kind, const size_t trace_idx,
-                  const SourceInfo& source,
+                  const SourceInfo& source, const VectorClock& vc,
                   const EventId completion_event_id = nullptr)
         : stream_id(stream_id),
           buffer(buffer),
           kind(kind),
           trace_idx(trace_idx),
           source(source),
-          completion_event_id(completion_event_id) {}
+          completion_event_id(completion_event_id),
+          vc(vc) {}
 
     bool IsWrite() const { return kind == AccessKind::kWrite; }
     bool IsAsync() const { return completion_event_id != nullptr; }
@@ -139,17 +163,19 @@ class ConcurrencyTracer {
 
  private:
   struct Trace {
+    VectorClock vc;
     const SourceInfo source{};
-    explicit Trace(const SourceInfo& source) : source(source) {}
+    Trace(const VectorClock& vc, const SourceInfo& source)
+        : vc(vc), source(source) {}
     virtual ~Trace() = default;
   };
   struct BufferRead final : Trace {
     const StreamId stream_id;
     const Buffer buffer;
 
-    explicit BufferRead(const StreamId stream_id, const Buffer& buffer,
-                        const SourceInfo& source)
-        : Trace(source), stream_id(stream_id), buffer(buffer) {}
+    explicit BufferRead(const VectorClock& vc, const StreamId stream_id,
+                        const Buffer& buffer, const SourceInfo& source)
+        : Trace(vc, source), stream_id(stream_id), buffer(buffer) {}
   };
   struct AsyncBufferRead final : Trace {
     const StreamId source_stream_id;
@@ -157,11 +183,11 @@ class ConcurrencyTracer {
     const EventId completion_event_id;
     const Buffer buffer;
 
-    explicit AsyncBufferRead(const StreamId source_stream_id,
+    explicit AsyncBufferRead(const VectorClock& vc, const StreamId source_stream_id,
                              const StreamId async_stream_id,
                              const EventId completion_event_id,
                              const Buffer& buffer, const SourceInfo& source)
-        : Trace(source),
+        : Trace(vc, source),
           source_stream_id(source_stream_id),
           async_stream_id(async_stream_id),
           completion_event_id(completion_event_id),
@@ -171,9 +197,9 @@ class ConcurrencyTracer {
     const StreamId stream_id;
     const Buffer buffer;
 
-    explicit BufferWrite(const StreamId stream_id, const Buffer& buffer,
-                         const SourceInfo& source)
-        : Trace(source), stream_id(stream_id), buffer(buffer) {}
+    explicit BufferWrite(const VectorClock& vc, const StreamId stream_id,
+                         const Buffer& buffer, const SourceInfo& source)
+        : Trace(vc, source), stream_id(stream_id), buffer(buffer) {}
     BufferWrite(BufferWrite& other) = default;
     BufferWrite(BufferWrite&& other) = default;
   };
@@ -183,11 +209,11 @@ class ConcurrencyTracer {
     const EventId completion_event_id;
     Buffer buffer;
 
-    explicit AsyncBufferWrite(const StreamId source_stream_id,
+    explicit AsyncBufferWrite(const VectorClock& vc, const StreamId source_stream_id,
                               const StreamId async_stream_id,
                               const EventId completion_event_id,
                               const Buffer& buffer, const SourceInfo& source)
-        : Trace(source),
+        : Trace(vc, source),
           source_stream_id(source_stream_id),
           async_stream_id(async_stream_id),
           completion_event_id(completion_event_id),
@@ -197,19 +223,21 @@ class ConcurrencyTracer {
     const StreamId stream_id;
     const EventId event_id;
 
-    WaitForEvent(const StreamId stream_id, const EventId event_id)
-        : Trace({}), stream_id(stream_id), event_id(event_id) {}
+    WaitForEvent(const VectorClock& vc, const StreamId stream_id, const EventId event_id)
+        : Trace(vc, {}), stream_id(stream_id), event_id(event_id) {}
   };
   struct EventRecord final : Trace {
     const StreamId stream_id;
     const EventId event_id;
 
-    EventRecord(const StreamId stream_id, const EventId event_id)
-        : Trace({}), stream_id(stream_id), event_id(event_id) {}
+    EventRecord(const VectorClock& vc, const StreamId stream_id, const EventId event_id)
+        : Trace(vc, {}), stream_id(stream_id), event_id(event_id) {}
   };
 
-  std::mutex mutex_{};
+  mutable std::mutex mutex_{};
   std::vector<std::unique_ptr<Trace>> trace_ ABSL_GUARDED_BY(mutex_);
+  absl::flat_hash_map<StreamId, VectorClock> stream_clock_;
+  absl::flat_hash_map<EventId, VectorClock> event_clock_;
 
   template <typename T, typename... Args>
   void AddTrace(Args&&... args) {
@@ -226,6 +254,24 @@ class ConcurrencyTracer {
     std::lock_guard lock(mutex_);
     trace_.push_back(std::make_unique<T>(trace));
   }
+
+  // Vector clock helpers.
+  VectorClock SnapshotStream(StreamId stream) { return stream_clock_[stream]; }
+  void AdvanceStream(StreamId stream) { stream_clock_[stream].clk[stream]++; }
+  void JoinStream(StreamId stream, const VectorClock& other) {
+    stream_clock_[stream].Join(other);
+  }
+
+  void AddBufferRead(StreamId stream_id, const Buffer& buffer, SourceInfo source);
+  void AddBufferWrite(StreamId stream_id, const Buffer& buffer, SourceInfo source);
+  void AddAsyncBufferRead(StreamId source_stream_id, StreamId async_stream_id,
+                          EventId event_id, const Buffer& buffer,
+                          SourceInfo source);
+  void AddAsyncBufferWrite(StreamId source_stream_id, StreamId async_stream_id,
+                           EventId event_id, const Buffer& buffer,
+                           SourceInfo source);
+  void AddEventRecord(StreamId stream_id, EventId event_id);
+  void AddWaitForEvent(StreamId stream_id, EventId event_id);
 
   using EdgeList = absl::flat_hash_map<size_t, absl::flat_hash_set<size_t>>;
   EdgeList BuildHappensBeforeGraph() const;

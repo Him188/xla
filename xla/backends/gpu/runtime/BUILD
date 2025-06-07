@@ -57,6 +57,7 @@ cc_library(
         "//xla/backends/gpu/runtime:kernel_thunk",
         "//xla/stream_executor/cuda:cuda_event",
         #        "//xla/stream_executor/cuda:cuda_stream",
+        "@com_google_absl//absl/container:btree",
     ],
 )
 
