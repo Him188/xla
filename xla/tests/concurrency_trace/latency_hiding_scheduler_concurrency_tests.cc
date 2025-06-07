@@ -78,7 +78,6 @@ ENTRY entry {
 }
 )";
   DebugOptions debug_options = GetDebugOptionsForTest();
-  debug_options.set_xla_latency_hiding_scheduler_synthetic_remove_control_deps(true);
   TF_ASSERT_OK_AND_ASSIGN(auto exe_with_module, CompileWithModule(hlo_string, {2, 1}, &debug_options));
   auto &exe = exe_with_module.first;
 
@@ -89,11 +88,14 @@ ENTRY entry {
   // Print compiled thunks for debugging.
   xla_test_util::print_gpu_thunk_info(exe.get());
 
-  auto run_and_check = [&](const bool enable_bug) {
+  auto run_and_check = [&](const bool enable_bug_collective_done, const bool enable_bug_control) {
     gpu::ConcurrencyTracer tracer;
     ExecuteOptions exec_opts;
     exec_opts.gpu_concurrency_tracer = &tracer;
-    exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = enable_bug;
+    exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = enable_bug_collective_done;
+    if (enable_bug_control) {
+      debug_options.set_xla_latency_hiding_scheduler_synthetic_remove_control_deps(true);
+    }
 
     TF_ASSERT_OK_AND_ASSIGN(const auto outs, Execute(*exe, {{mat, mat, pred}, {mat, mat, pred}}, exec_opts));
     (void)outs;
@@ -103,7 +105,7 @@ ENTRY entry {
       tracer.PrintDataRaces(std::cout);
     tracer.PrintTraces(std::cout);
 
-    if (enable_bug) {
+    if (enable_bug_collective_done || enable_bug_control) {
       ASSERT_FALSE(races.empty());
     } else {
       ASSERT_TRUE(races.empty());
@@ -111,9 +113,11 @@ ENTRY entry {
   };
 
   // Run without the synthetic bug: should be race free.
-  run_and_check(false);
+  run_and_check(false, false);
   // Run with the synthetic bug enabled: should detect a race.
-  run_and_check(true);
+  run_and_check(true, true);
+  run_and_check(true, false);
+  run_and_check(false, true);
 }
 
 // XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RunStableHloModule) {
