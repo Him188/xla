@@ -7,6 +7,7 @@
 #include "stablehlo/dialect/Register.h"
 #include "xla/mlir/utils/error_util.h"
 #include "xla/tests/test_utils.h"
+#include "xla/tests/concurrency_trace/perf_utils.h"
 
 #include <cmath>
 #include <cstdio>
@@ -37,14 +38,7 @@ absl::StatusOr<std::unique_ptr<HloModule>> BaseConcurrencyTests::ParseHloText(ab
 }
 
 size_t BaseConcurrencyTests::GetCurrentRSSBytes() {
-  long rss = 0;
-  FILE *fp = fopen("/proc/self/statm", "r");
-  if (fp != nullptr) {
-    if (fscanf(fp, "%*s%ld", &rss) != 1)
-      rss = 0;
-    fclose(fp);
-  }
-  return rss * sysconf(_SC_PAGESIZE);
+  return xla::GetCurrentRSSBytes();
 }
 
 void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race, int warmup_iters, int measure_iters) {

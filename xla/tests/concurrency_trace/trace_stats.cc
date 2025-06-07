@@ -4,6 +4,22 @@
 
 namespace xla {
 
+void PrintPerfStatsJson(const RunPerfStats &perf_stats, std::ostream &os,
+                        int indent) {
+  auto indent_str = std::string(indent, ' ');
+  auto indent_inner = std::string(indent + 2, ' ');
+
+  os << indent_str << "\"perf_stats\": {\n";
+  os << indent_inner << "\"compilation_time_ms\": " << perf_stats.compilation_time_ms << ",\n";
+  os << indent_inner << "\"execution_time_ms\": " << perf_stats.execution_time_ms << ",\n";
+  os << indent_inner << "\"compilation_memory_delta_bytes\": " << perf_stats.compilation_memory_delta_bytes << ",\n";
+  os << indent_inner << "\"execution_memory_delta_bytes\": " << perf_stats.execution_memory_delta_bytes << ",\n";
+  os << indent_inner << "\"tracer_memory_usage_bytes\": " << perf_stats.tracer_memory_usage_bytes << ",\n";
+  os << indent_inner << "\"race_detection_time_ms\": " << perf_stats.race_detection_time_ms << ",\n";
+  os << indent_inner << "\"races\": " << perf_stats.races << "\n";
+  os << indent_str << "},";
+}
+
 void PrintTraceAndExecutableStatsJson(const gpu::ConcurrencyTracer::TraceStats &trace_stats, const gpu::ExecutableStats &exec_stats, std::ostream &os,
                                       int indent) {
   auto indent_str = std::string(indent, ' ');

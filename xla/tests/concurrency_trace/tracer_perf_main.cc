@@ -20,6 +20,7 @@
 #include "xla/pjrt/pjrt_client.h"
 #include "xla/service/hlo_module_config.h"
 #include "xla/tests/concurrency_trace/trace_stats.h"
+#include "xla/tests/concurrency_trace/perf_utils.h"
 #include "xla/tests/test_utils.h"
 
 #include <cstdio>
@@ -35,17 +36,6 @@ ABSL_FLAG(bool, trace, true, "Enable concurrency tracer");
 ABSL_FLAG(int, replicas, 2, "Number of replicas");
 
 namespace xla {
-
-static size_t GetCurrentRSSBytes() {
-  long rss = 0;
-  FILE *fp = fopen("/proc/self/statm", "r");
-  if (fp != nullptr) {
-    if (fscanf(fp, "%*s%ld", &rss) != 1)
-      rss = 0;
-    fclose(fp);
-  }
-  return rss * sysconf(_SC_PAGESIZE);
-}
 
 absl::StatusOr<std::unique_ptr<VerifiedHloModule>> ParseHlo(absl::string_view hlo_text) {
   HloModuleConfig config;
@@ -198,8 +188,19 @@ absl::Status Run() {
 
     auto exec_stats_or = gpu::GetExecutableStats(executable.get());
     if (exec_stats_or.ok()) {
+      RunPerfStats perf;
+      perf.compilation_time_ms = absl::ToDoubleMilliseconds(compile_dur);
+      perf.execution_time_ms = absl::ToDoubleMilliseconds(exec_dur);
+      perf.compilation_memory_delta_bytes = rss_after_compile - rss_before_compile;
+      perf.execution_memory_delta_bytes = rss_after_exec - rss_before_exec;
+      perf.tracer_memory_usage_bytes = tracer.GetApproximateMemoryUsage();
+      perf.race_detection_time_ms = absl::ToDoubleMilliseconds(td1 - td0);
+      perf.races = races.size();
+
       std::ostringstream os;
       os << "{\n";
+      PrintPerfStatsJson(perf, os, 2);
+      os << ",\n";
       PrintTraceAndExecutableStatsJson(tracer.GetTraceStats(), *exec_stats_or, os, 2);
       os << "}";
       std::cout << os.str() << std::endl;

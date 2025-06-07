@@ -95,7 +95,10 @@ cc_library(
     name = "trace_stats",
     testonly = True,
     srcs = ["trace_stats.cc"],
-    hdrs = ["trace_stats.h"],
+    hdrs = [
+        "perf_utils.h",
+        "trace_stats.h",
+    ],
     deps = [
         "//xla/backends/gpu/runtime:concurrency_tracer",
         "//xla/backends/gpu/runtime:executable_stats",
