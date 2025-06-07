@@ -86,27 +86,34 @@ ENTRY entry {
   Literal mat = LiteralUtil::CreateFull({8}, static_cast<bfloat16>(1.0f));
   Literal pred = LiteralUtil::CreateR0<int>(1);
 
-  gpu::ConcurrencyTracer tracer;
-  ExecuteOptions exec_opts;
-  exec_opts.gpu_concurrency_tracer = &tracer;
-  exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
-
-  // Execute
-  TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe,
-                                             {
-                                                 {mat, mat, pred},
-                                                 {mat, mat, pred},
-                                             },
-                                             exec_opts));
-  // Print compiled thunks
+  // Print compiled thunks for debugging.
   xla_test_util::print_gpu_thunk_info(exe.get());
-  auto races = tracer.DetectDataRaces();
-  std::cout << "races=" << races.size() << std::endl;
-  if (!races.empty()) {
-    tracer.PrintDataRaces(std::cout);
-  }
-  tracer.PrintTraces(std::cout);
-  ASSERT_FALSE(races.empty());
+
+  auto run_and_check = [&](const bool enable_bug) {
+    gpu::ConcurrencyTracer tracer;
+    ExecuteOptions exec_opts;
+    exec_opts.gpu_concurrency_tracer = &tracer;
+    exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = enable_bug;
+
+    TF_ASSERT_OK_AND_ASSIGN(const auto outs, Execute(*exe, {{mat, mat, pred}, {mat, mat, pred}}, exec_opts));
+    (void)outs;
+
+    const auto races = tracer.DetectDataRaces();
+    if (!races.empty())
+      tracer.PrintDataRaces(std::cout);
+    tracer.PrintTraces(std::cout);
+
+    if (enable_bug) {
+      ASSERT_FALSE(races.empty());
+    } else {
+      ASSERT_TRUE(races.empty());
+    }
+  };
+
+  // Run without the synthetic bug: should be race free.
+  run_and_check(false);
+  // Run with the synthetic bug enabled: should detect a race.
+  run_and_check(true);
 }
 
 // XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, RunStableHloModule) {
