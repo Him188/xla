@@ -8,9 +8,9 @@
 #include "xla/mlir/utils/error_util.h"
 #include "xla/tests/test_utils.h"
 
-#include <cstdlib>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <sstream>
 #include <string>
 #include <sys/resource.h>
@@ -26,6 +26,9 @@ DebugOptions BaseConcurrencyTests::GetDebugOptionsForTest() const {
   dbg.set_xla_gpu_copy_insertion_use_region_analysis(true);
   dbg.clear_xla_gpu_enable_command_buffer();
   dbg.add_xla_gpu_enable_command_buffer(DebugOptions_CommandBufferCmdType_INVALID);
+  if (enable_async_dot_) {
+    dbg.set_xla_gpu_async_dot(true);
+  }
   return dbg;
 }
 
@@ -35,9 +38,10 @@ absl::StatusOr<std::unique_ptr<HloModule>> BaseConcurrencyTests::ParseHloText(ab
 
 size_t BaseConcurrencyTests::GetCurrentRSSBytes() {
   long rss = 0;
-  FILE* fp = fopen("/proc/self/statm", "r");
+  FILE *fp = fopen("/proc/self/statm", "r");
   if (fp != nullptr) {
-    if (fscanf(fp, "%*s%ld", &rss) != 1) rss = 0;
+    if (fscanf(fp, "%*s%ld", &rss) != 1)
+      rss = 0;
     fclose(fp);
   }
   return rss * sysconf(_SC_PAGESIZE);
@@ -70,9 +74,10 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
     ExecuteOptions exec_opts;
     exec_opts.gpu_concurrency_tracer = &tracer;
     exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
+    exec_opts.gpu_synthetic_bug_options.wait_for_streams_thunk = enable_wait_for_streams_bug_;
 
     TF_ASSERT_OK_AND_ASSIGN(auto res, prepare_fn());
-    auto& exe = res.exe;
+    auto &exe = res.exe;
     {
       TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, exec_opts));
       (void)outs;
@@ -80,12 +85,13 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
 
     xla_test_util::print_gpu_thunk_info(exe.get());
     auto races = tracer.DetectDataRaces();
-    if (!races.empty()) tracer.PrintDataRaces(std::cout);
+    if (!races.empty())
+      tracer.PrintDataRaces(std::cout);
     tracer.PrintTraces(std::cout);
     ASSERT_EQ(races.empty(), !expect_race);
     exe->Delete();
   } else {
-    if (const char* env = getenv("XLA_TRACER_WARMUP")) {
+    if (const char *env = getenv("XLA_TRACER_WARMUP")) {
       warmup_iters = std::stoi(env);
     }
 
@@ -100,10 +106,11 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
 
     ExecuteOptions base_opts;
     base_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
+    base_opts.gpu_synthetic_bug_options.wait_for_streams_thunk = enable_wait_for_streams_bug_;
 
     for (int i = 0; i < warmup_iters; ++i) {
       TF_ASSERT_OK_AND_ASSIGN(auto res, prepare_fn());
-      auto& exe = res.exe;
+      auto &exe = res.exe;
       {
         TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, base_opts));
         (void)outs;
@@ -113,7 +120,7 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
 
     for (int i = 0; i < measure_iters; ++i) {
       TF_ASSERT_OK_AND_ASSIGN(auto res, prepare_fn());
-      auto& exe = res.exe;
+      auto &exe = res.exe;
       size_t rss_before = GetCurrentRSSBytes();
       absl::Time t0 = absl::Now();
       {
@@ -129,11 +136,12 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
 
     for (int i = 0; i < warmup_iters; ++i) {
       TF_ASSERT_OK_AND_ASSIGN(auto res, prepare_fn());
-      auto& exe = res.exe;
+      auto &exe = res.exe;
       gpu::ConcurrencyTracer tracer;
       ExecuteOptions exec_opts;
       exec_opts.gpu_concurrency_tracer = &tracer;
       exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
+      exec_opts.gpu_synthetic_bug_options.wait_for_streams_thunk = enable_wait_for_streams_bug_;
       {
         TF_ASSERT_OK_AND_ASSIGN(auto outs, Execute(*exe, res.exec_args, exec_opts));
         (void)outs;
@@ -145,11 +153,12 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
 
     for (int i = 0; i < measure_iters; ++i) {
       TF_ASSERT_OK_AND_ASSIGN(auto res, prepare_fn());
-      auto& exe = res.exe;
+      auto &exe = res.exe;
       gpu::ConcurrencyTracer tracer;
       ExecuteOptions exec_opts;
       exec_opts.gpu_concurrency_tracer = &tracer;
       exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
+      exec_opts.gpu_synthetic_bug_options.wait_for_streams_thunk = enable_wait_for_streams_bug_;
       size_t rss_before = GetCurrentRSSBytes();
       absl::Time t0 = absl::Now();
       {
@@ -165,25 +174,28 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
       ASSERT_EQ(races.empty(), !expect_race);
       if (!stats_collected) {
         auto exec_stats_or = gpu::GetExecutableStats(exe.get());
-        if (exec_stats_or.ok()) exec_stats = *exec_stats_or;
+        if (exec_stats_or.ok())
+          exec_stats = *exec_stats_or;
         trace_stats = tracer.GetTraceStats();
         stats_collected = true;
       }
       exe->Delete();
     }
 
-    auto mean_std_err = [](const std::vector<double>& vals) {
+    auto mean_std_err = [](const std::vector<double> &vals) {
       double mean = 0.0;
-      for (double v : vals) mean += v;
+      for (double v : vals)
+        mean += v;
       mean /= vals.size();
       double var = 0.0;
-      for (double v : vals) var += (v - mean) * (v - mean);
+      for (double v : vals)
+        var += (v - mean) * (v - mean);
       double stddev = std::sqrt(var / (vals.size() > 1 ? vals.size() - 1 : 1));
       double stderr = stddev / std::sqrt(vals.size());
       return std::pair<double, double>(mean, stderr);
     };
 
-    auto mean_std_err_size = [&mean_std_err](const std::vector<size_t>& vals) {
+    auto mean_std_err_size = [&mean_std_err](const std::vector<size_t> &vals) {
       std::vector<double> tmp(vals.begin(), vals.end());
       return mean_std_err(tmp);
     };
@@ -218,30 +230,28 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
   }
 }
 
-absl::StatusOr<BaseConcurrencyTests::ExeWithModule> BaseConcurrencyTests::CompileWithModule(
-    std::string_view hlo_string, const DeviceMesh& mesh, DebugOptions* debug_options) {
+absl::StatusOr<BaseConcurrencyTests::ExeWithModule> BaseConcurrencyTests::CompileWithModule(std::string_view hlo_string, const DeviceMesh &mesh,
+                                                                                            DebugOptions *debug_options) {
   TF_ASSIGN_OR_RETURN(auto module, ParseHloText(hlo_string));
   TF_ASSIGN_OR_RETURN(auto exe, Compile(module.get(), mesh, debug_options));
   return ExeWithModule(std::move(exe), std::move(module));
 }
 
-absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> BaseConcurrencyTests::Compile(
-    std::string_view hlo_string, const DeviceMesh& mesh, DebugOptions* debug_options) {
+absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> BaseConcurrencyTests::Compile(std::string_view hlo_string, const DeviceMesh &mesh,
+                                                                                    DebugOptions *debug_options) {
   TF_ASSIGN_OR_RETURN(auto pair, CompileWithModule(hlo_string, mesh, debug_options));
   return std::move(pair.first);
 }
 
-absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> BaseConcurrencyTests::Compile(
-    HloModule* module, const DeviceMesh& mesh, DebugOptions* debug_options) {
+absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> BaseConcurrencyTests::Compile(HloModule *module, const DeviceMesh &mesh, DebugOptions *debug_options) {
   module->mutable_config().set_replica_count(mesh.num_replicas);
 
   CompileOptions copts;
-  auto& eb = copts.executable_build_options;
+  auto &eb = copts.executable_build_options;
   eb.set_num_replicas(mesh.num_replicas);
   eb.set_num_partitions(mesh.num_partitions);
 
-  TF_ASSIGN_OR_RETURN(const auto device_assignment,
-                      client().GetDefaultDeviceAssignment(mesh.num_replicas, mesh.num_partitions));
+  TF_ASSIGN_OR_RETURN(const auto device_assignment, client().GetDefaultDeviceAssignment(mesh.num_replicas, mesh.num_partitions));
   eb.set_device_assignment(device_assignment);
   if (debug_options == nullptr) {
     *eb.mutable_debug_options() = GetDebugOptionsForTest();
@@ -251,8 +261,8 @@ absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> BaseConcurrencyTests::Comp
   return client().Compile({module->ToProto()}, copts);
 }
 
-absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> BaseConcurrencyTests::CompileStableHlo(
-    std::string_view stablehlo_string, const DeviceMesh& mesh, DebugOptions* debug_options) {
+absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> BaseConcurrencyTests::CompileStableHlo(std::string_view stablehlo_string, const DeviceMesh &mesh,
+                                                                                             DebugOptions *debug_options) {
   mlir::DialectRegistry registry;
   mlir::func::registerAllExtensions(registry);
   mlir::stablehlo::registerAllDialects(registry);
@@ -264,12 +274,11 @@ absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> BaseConcurrencyTests::Comp
   }
 
   CompileOptions copts;
-  auto& eb = copts.executable_build_options;
+  auto &eb = copts.executable_build_options;
   eb.set_num_replicas(mesh.num_replicas);
   eb.set_num_partitions(mesh.num_partitions);
 
-  TF_ASSIGN_OR_RETURN(const auto device_assignment,
-                      client().GetDefaultDeviceAssignment(mesh.num_replicas, mesh.num_partitions));
+  TF_ASSIGN_OR_RETURN(const auto device_assignment, client().GetDefaultDeviceAssignment(mesh.num_replicas, mesh.num_partitions));
   eb.set_device_assignment(device_assignment);
   if (debug_options == nullptr) {
     *eb.mutable_debug_options() = GetDebugOptionsForTest();
@@ -279,49 +288,48 @@ absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> BaseConcurrencyTests::Comp
   return client().Compile(module.get(), copts);
 }
 
-absl::StatusOr<std::vector<std::vector<std::unique_ptr<PjRtBuffer>>>> BaseConcurrencyTests::Execute(
-    PjRtLoadedExecutable& executable, absl::Span<const absl::Span<const LiteralSlice>> args,
-    const ExecuteOptions& exec_opts) const {
+absl::StatusOr<std::vector<std::vector<std::unique_ptr<PjRtBuffer>>>>
+BaseConcurrencyTests::Execute(PjRtLoadedExecutable &executable, absl::Span<const absl::Span<const LiteralSlice>> args, const ExecuteOptions &exec_opts) const {
   std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> buffers;
   buffers.reserve(args.size());
 
   for (size_t device_index = 0; device_index < args.size(); ++device_index) {
-    TF_ASSIGN_OR_RETURN(auto* mem_space, client().addressable_devices()[device_index]->default_memory_space());
-    auto& device_buffers = buffers.emplace_back();
+    TF_ASSIGN_OR_RETURN(auto *mem_space, client().addressable_devices()[device_index]->default_memory_space());
+    auto &device_buffers = buffers.emplace_back();
     device_buffers.reserve(args[device_index].size());
-    for (const LiteralSlice& arg : args.at(device_index)) {
+    for (const LiteralSlice &arg : args.at(device_index)) {
       TF_ASSIGN_OR_RETURN(auto buffer, client().BufferFromHostLiteral(arg, mem_space));
       TF_RETURN_IF_ERROR(buffer->GetReadyFuture().Await());
       device_buffers.emplace_back(std::move(buffer));
     }
   }
 
-  std::vector<std::vector<PjRtBuffer*>> buffer_ptrs;
+  std::vector<std::vector<PjRtBuffer *>> buffer_ptrs;
   buffer_ptrs.reserve(buffers.size());
-  for (auto& device_buffers : buffers) {
-    auto& ptrs = buffer_ptrs.emplace_back();
+  for (auto &device_buffers : buffers) {
+    auto &ptrs = buffer_ptrs.emplace_back();
     ptrs.reserve(device_buffers.size());
-    for (auto& buf : device_buffers) ptrs.push_back(buf.get());
+    for (auto &buf : device_buffers)
+      ptrs.push_back(buf.get());
   }
 
   TF_ASSIGN_OR_RETURN(auto res, executable.Execute(buffer_ptrs, exec_opts));
 
-  for (auto& device_buffers : res) {
-    for (const auto& buf : device_buffers) {
+  for (auto &device_buffers : res) {
+    for (const auto &buf : device_buffers) {
       TF_RETURN_IF_ERROR(buf->GetReadyFuture().Await());
     }
   }
   return res;
 }
 
-std::vector<absl::Span<const LiteralSlice>> BaseConcurrencyTests::MakeInnerSpan(
-    const std::vector<std::vector<LiteralSlice>>& fake_arg_slices) {
+std::vector<absl::Span<const LiteralSlice>> BaseConcurrencyTests::MakeInnerSpan(const std::vector<std::vector<LiteralSlice>> &fake_arg_slices) {
   std::vector<absl::Span<const LiteralSlice>> exec_args;
   exec_args.reserve(fake_arg_slices.size());
-  for (const auto& slices : fake_arg_slices) {
+  for (const auto &slices : fake_arg_slices) {
     exec_args.emplace_back(slices);
   }
   return exec_args;
 }
 
-}  // namespace xla
+} // namespace xla
