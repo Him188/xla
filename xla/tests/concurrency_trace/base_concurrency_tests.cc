@@ -64,9 +64,9 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
   };
 
   if (!measure_performance_) {
-    gpu::ConcurrencyTracer tracer;
+    gpu::ThunkSanitizer tracer;
     ExecuteOptions exec_opts;
-    exec_opts.gpu_concurrency_tracer = &tracer;
+    exec_opts.gpu_thunk_sanitizer = &tracer;
     exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
     exec_opts.gpu_synthetic_bug_options.wait_for_streams_thunk = enable_wait_for_streams_bug_;
 
@@ -95,7 +95,7 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
     std::vector<size_t> traced_memory;
     std::vector<size_t> tracer_memory;
     gpu::ExecutableStats exec_stats;
-    gpu::ConcurrencyTracer::TraceStats trace_stats;
+    gpu::ThunkSanitizer::TraceStats trace_stats;
     bool stats_collected = false;
 
     ExecuteOptions base_opts;
@@ -131,9 +131,9 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
     for (int i = 0; i < warmup_iters; ++i) {
       TF_ASSERT_OK_AND_ASSIGN(auto res, prepare_fn());
       auto &exe = res.exe;
-      gpu::ConcurrencyTracer tracer;
+      gpu::ThunkSanitizer tracer;
       ExecuteOptions exec_opts;
-      exec_opts.gpu_concurrency_tracer = &tracer;
+      exec_opts.gpu_thunk_sanitizer = &tracer;
       exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
       exec_opts.gpu_synthetic_bug_options.wait_for_streams_thunk = enable_wait_for_streams_bug_;
       {
@@ -148,9 +148,9 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
     for (int i = 0; i < measure_iters; ++i) {
       TF_ASSERT_OK_AND_ASSIGN(auto res, prepare_fn());
       auto &exe = res.exe;
-      gpu::ConcurrencyTracer tracer;
+      gpu::ThunkSanitizer tracer;
       ExecuteOptions exec_opts;
-      exec_opts.gpu_concurrency_tracer = &tracer;
+      exec_opts.gpu_thunk_sanitizer = &tracer;
       exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
       exec_opts.gpu_synthetic_bug_options.wait_for_streams_thunk = enable_wait_for_streams_bug_;
       size_t rss_before = GetCurrentRSSBytes();

@@ -90,7 +90,7 @@ limitations under the License.
 #include "tsl/platform/statusor.h"
 #include "tsl/profiler/lib/scoped_annotation.h"
 #include "tsl/profiler/lib/traceme.h"
-#include "xla/backends/gpu/runtime/concurrency_trace.h"
+#include "xla/backends/gpu/runtime/thunk_sanitizer.h"
 #include "xla/stream_executor/cuda/cuda_executor.h"
 #include "xla/stream_executor/cuda/cuda_stream.h"
 
@@ -391,7 +391,7 @@ absl::Status ExecuteThunks(
   const auto stream_executor = execute_params.stream->parent();
   if (const auto cuda_executor =
           dynamic_cast<stream_executor::gpu::CudaExecutor*>(stream_executor)) {
-    cuda_executor->SetConcurrencyTracer(execute_params.concurrency_tracer);
+    cuda_executor->SetConcurrencyTracer(execute_params.thunk_sanitizer);
   }
   TF_RETURN_IF_ERROR(thunk_sequence.ExecuteOnStream(execute_params));
 

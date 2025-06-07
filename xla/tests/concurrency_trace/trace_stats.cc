@@ -20,7 +20,7 @@ void PrintPerfStatsJson(const RunPerfStats &perf_stats, std::ostream &os,
   os << indent_str << "}";
 }
 
-void PrintTraceAndExecutableStatsJson(const gpu::ConcurrencyTracer::TraceStats &trace_stats, const gpu::ExecutableStats &exec_stats, std::ostream &os,
+void PrintTraceAndExecutableStatsJson(const gpu::ThunkSanitizer::TraceStats &trace_stats, const gpu::ExecutableStats &exec_stats, std::ostream &os,
                                       int indent) {
   auto indent_str = std::string(indent, ' ');
   auto indent_inner = std::string(indent + 2, ' ');

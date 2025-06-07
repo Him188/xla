@@ -1,5 +1,5 @@
 #include "test_util.h"
-#include "xla/backends/gpu/runtime/concurrency_trace.h"
+#include "xla/backends/gpu/runtime/thunk_sanitizer.h"
 #include "xla/hlo/builder/xla_builder.h"
 #include "xla/tsl/lib/core/status_test_util.h"
 
@@ -76,10 +76,10 @@ TEST(XlaCompilationTest, ExecuteOnMultpleStreamsSlice) {
     std::unique_ptr<PjRtBuffer> bufferA = xla_test_util::CreateDeviceBuffer(*pjrt_client, hostA, matShape, device_ordinal);
     std::unique_ptr<PjRtBuffer> bufferB = xla_test_util::CreateDeviceBuffer(*pjrt_client, hostB, matShape, device_ordinal);
 
-    gpu::ConcurrencyTracer tracer;
+    gpu::ThunkSanitizer tracer;
     ExecuteOptions execute_options;
     execute_options.gpu_synthetic_bug_options.wait_for_streams_thunk = true;
-    execute_options.gpu_concurrency_tracer = &tracer;
+    execute_options.gpu_thunk_sanitizer = &tracer;
     const std::vector<std::vector<std::unique_ptr<PjRtBuffer>>> outputs =
         xla_test_util::compile_and_execute(pjrt_stream_client, computation, {{bufferA.get(), bufferB.get()}}, compile_options, execute_options);
 

@@ -12,7 +12,7 @@
 
 namespace xla::gpu {
 
-struct ConcurrencyTraceOptions {
+struct ThunkSanitizerOptions {
   struct SyntheticBugOptions {
     bool wait_for_streams_thunk = false;
   };
@@ -23,10 +23,10 @@ struct ConcurrencyTraceOptions {
   bool instrument_streams = true;
 };
 
-class ConcurrencyTracer {
+class ThunkSanitizer {
  public:
-  explicit ConcurrencyTracer();
-  ~ConcurrencyTracer();
+  explicit ThunkSanitizer();
+  ~ThunkSanitizer();
   using EventId = const void*;
   using StreamId = const void*;
 

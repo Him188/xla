@@ -100,8 +100,8 @@ cc_library(
         "trace_stats.h",
     ],
     deps = [
-        "//xla/backends/gpu/runtime:concurrency_tracer",
         "//xla/backends/gpu/runtime:executable_stats",
+        "//xla/backends/gpu/runtime:thunk_sanitizer",
     ],
 )
 
@@ -141,8 +141,8 @@ xla_cc_binary(
     deps = [
         ":trace_stats",
         "//xla:debug_options_flags",
-        "//xla/backends/gpu/runtime:concurrency_tracer",
         "//xla/backends/gpu/runtime:executable_stats",
+        "//xla/backends/gpu/runtime:thunk_sanitizer",
         "//xla/hlo/testlib:verified_hlo_module",
         "//xla/mlir_hlo:hlo_dialect_registration",
         "//xla/pjrt/gpu:se_gpu_pjrt_client",

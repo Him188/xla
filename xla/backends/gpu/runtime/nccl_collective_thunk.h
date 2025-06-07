@@ -144,7 +144,7 @@ class NcclCollectiveThunk : public Thunk {
     friend class NcclCollectiveThunk;
     friend class NcclCollectiveDoneThunk;
     friend class NcclGroupThunk;
-    friend class ConcurrencyTracer;
+    friend class ThunkSanitizer;
 
     absl::Status Initialize(se::StreamExecutor* executor);
     absl::StatusOr<se::Event*> GetEvent(se::StreamExecutor* executor);
@@ -181,7 +181,7 @@ class NcclCollectiveThunk : public Thunk {
   }
 
  protected:
-  friend class ConcurrencyTracer;
+  friend class ThunkSanitizer;
   virtual absl::Status RunNcclCollective(const ExecuteParams& params,
                                          se::Stream& stream,
                                          CommunicatorHandle comm) = 0;

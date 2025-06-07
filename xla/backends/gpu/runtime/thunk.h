@@ -417,7 +417,7 @@ class Thunk {
     bool requires_exclusive_lock_on_gpu = false;
 
     const SyntheticBugOptions* synthetic_bug_options{};
-    ConcurrencyTracer* concurrency_tracer = nullptr;
+    ThunkSanitizer* thunk_sanitizer = nullptr;
 
    private:
     friend class CommandBufferThunk;
@@ -435,7 +435,7 @@ class Thunk {
                   bool mock_collectives = false,
                   bool requires_exclusive_lock_on_gpu = false,
                   const SyntheticBugOptions* synthetic_bug_options = {},
-                  ConcurrencyTracer* tracer = nullptr);
+                  ThunkSanitizer* sanitizer = nullptr);
   };
 
   //===--------------------------------------------------------------------===//

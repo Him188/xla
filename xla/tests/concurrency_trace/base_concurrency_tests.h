@@ -1,8 +1,8 @@
 #ifndef XLA_TESTS_CONCURRENCY_TRACE_BASE_CONCURRENCY_TESTS_H_
 #define XLA_TESTS_CONCURRENCY_TRACE_BASE_CONCURRENCY_TESTS_H_
 
-#include "xla/backends/gpu/runtime/concurrency_trace.h"
 #include "xla/backends/gpu/runtime/executable_stats.h"
+#include "xla/backends/gpu/runtime/thunk_sanitizer.h"
 #include "xla/literal.h"
 #include "xla/literal_util.h"
 #include "xla/pjrt/gpu/se_gpu_pjrt_client.h"

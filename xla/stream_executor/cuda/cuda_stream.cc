@@ -48,7 +48,7 @@ limitations under the License.
 #include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/statusor.h"
 #include "tsl/profiler/lib/nvtx_utils.h"
-#include "xla/backends/gpu/runtime/concurrency_trace.h"
+#include "xla/backends/gpu/runtime/thunk_sanitizer.h"
 
 namespace stream_executor {
 namespace gpu {

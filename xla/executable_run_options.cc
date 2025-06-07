@@ -190,11 +190,11 @@ const gpu::SyntheticBugOptions* ExecutableRunOptions::gpu_synthetic_bug_options(
 }
 
 ExecutableRunOptions& ExecutableRunOptions::set_gpu_concurrency_tracer(
-    gpu::ConcurrencyTracer* tracer) {
+    gpu::ThunkSanitizer* tracer) {
   gpu_concurrency_tracer_ = tracer;
   return *this;
 }
-gpu::ConcurrencyTracer* ExecutableRunOptions::gpu_concurrency_tracer() const {
+gpu::ThunkSanitizer* ExecutableRunOptions::gpu_concurrency_tracer() const {
   return gpu_concurrency_tracer_;
 }
 

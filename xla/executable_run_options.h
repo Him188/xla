@@ -56,7 +56,7 @@ class CpuExecutableRunOptions;
 }  // namespace cpu
 
 namespace gpu {
-class ConcurrencyTracer;
+class ThunkSanitizer;
 class GpuExecutableRunOptions;
 struct SyntheticBugOptions;
 }  // namespace gpu
@@ -261,8 +261,8 @@ class ExecutableRunOptions {
   const gpu::SyntheticBugOptions* gpu_synthetic_bug_options() const;
 
   ExecutableRunOptions& set_gpu_concurrency_tracer(
-      gpu::ConcurrencyTracer* tracer);
-  gpu::ConcurrencyTracer* gpu_concurrency_tracer() const;
+      gpu::ThunkSanitizer* tracer);
+  gpu::ThunkSanitizer* gpu_concurrency_tracer() const;
 
  private:
   stream_executor::DeviceMemoryAllocator* allocator_ = nullptr;
@@ -285,7 +285,7 @@ class ExecutableRunOptions {
   const gpu::GpuExecutableRunOptions* gpu_executable_run_options_ = nullptr;
   const ffi::ExecutionContext* ffi_execution_context_ = nullptr;
   const gpu::SyntheticBugOptions* gpu_synthetic_bug_options_ = nullptr;
-  gpu::ConcurrencyTracer* gpu_concurrency_tracer_ = nullptr;
+  gpu::ThunkSanitizer* gpu_concurrency_tracer_ = nullptr;
 };
 
 }  // namespace xla

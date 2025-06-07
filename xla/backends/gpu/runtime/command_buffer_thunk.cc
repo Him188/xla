@@ -30,7 +30,7 @@ limitations under the License.
 #include "xla/backends/gpu/runtime/command_buffer_cmd.h"
 #include "xla/backends/gpu/runtime/sequential_thunk.h"
 #include "xla/backends/gpu/runtime/thunk.h"
-#include "concurrency_trace.h"
+#include "thunk_sanitizer.h"
 #include "xla/service/buffer_assignment.h"
 #include "xla/service/gpu/buffer_allocations.h"
 #include "xla/stream_executor/command_buffer.h"
@@ -218,7 +218,7 @@ absl::Status CommandBufferThunk::ExecuteOnStream(const ExecuteParams& params) {
     return absl::OkStatus();
   }
 
-  if (auto* tracer = params.concurrency_tracer) {
+  if (auto* tracer = params.thunk_sanitizer) {
     if (thunks_) {
       for (const std::unique_ptr<Thunk>& thunk : thunks_->thunks()) {
         tracer->OnThunkLaunch(*thunk, params);

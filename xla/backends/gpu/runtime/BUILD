@@ -42,9 +42,9 @@ cc_library(
 )
 
 cc_library(
-    name = "concurrency_tracer",
-    srcs = ["concurrency_trace.cc"],
-    hdrs = ["concurrency_trace.h"],
+    name = "thunk_sanitizer",
+    srcs = ["thunk_sanitizer.cc"],
+    hdrs = ["thunk_sanitizer.h"],
     deps = [
         ":thunk",
         "//xla/backends/gpu/runtime:gemm_thunk",
@@ -1048,7 +1048,7 @@ cc_library(
         "//xla:util",
         "//xla/backends/gpu/collectives:gpu_clique_key",
         "//xla/backends/gpu/collectives:gpu_collectives",
-        "//xla/backends/gpu/runtime:concurrency_tracer",
+        "//xla/backends/gpu/runtime:thunk_sanitizer",
         "//xla/hlo/ir:hlo",
         "//xla/stream_executor:event",
         "//xla/stream_executor:stream",
@@ -1121,8 +1121,8 @@ cc_library(
     ]),
     deps = [
         ":annotation",
-        ":concurrency_tracer",
         ":thunk",
+        ":thunk_sanitizer",
         "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",

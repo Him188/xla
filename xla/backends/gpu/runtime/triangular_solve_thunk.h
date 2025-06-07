@@ -54,7 +54,7 @@ class TriangularSolveThunk : public Thunk {
   const BufferAllocation::Slice& temp_buffer() const { return temp_buffer_; }
 
  private:
-  friend class ConcurrencyTracer;
+  friend class ThunkSanitizer;
   const se::blas::UpperLower uplo_;
   const se::blas::Side side_;
   const se::blas::Diagonal unit_diagonal_;

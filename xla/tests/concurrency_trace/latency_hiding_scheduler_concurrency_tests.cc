@@ -5,8 +5,8 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/Parser/Parser.h"
 #include "stablehlo/dialect/Register.h"
-#include "xla/backends/gpu/runtime/concurrency_trace.h"
 #include "xla/backends/gpu/runtime/executable_stats.h"
+#include "xla/backends/gpu/runtime/thunk_sanitizer.h"
 #include "xla/hlo/builder/lib/arithmetic.h"
 #include "xla/hlo/builder/xla_builder.h"
 #include "xla/literal.h"
@@ -89,9 +89,9 @@ ENTRY entry {
   xla_test_util::print_gpu_thunk_info(exe.get());
 
   auto run_and_check = [&](const bool enable_bug_collective_done, const bool enable_bug_control, bool &detected_race) {
-    gpu::ConcurrencyTracer tracer;
+    gpu::ThunkSanitizer sanitizer;
     ExecuteOptions exec_opts;
-    exec_opts.gpu_concurrency_tracer = &tracer;
+    exec_opts.gpu_thunk_sanitizer = &sanitizer;
     exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = enable_bug_collective_done;
     if (enable_bug_control) {
       debug_options.set_xla_latency_hiding_scheduler_synthetic_remove_control_deps(true);
@@ -100,10 +100,10 @@ ENTRY entry {
     TF_ASSERT_OK_AND_ASSIGN(const auto outs, Execute(*exe, {{mat, mat, pred}, {mat, mat, pred}}, exec_opts));
     (void)outs;
 
-    const auto races = tracer.DetectDataRaces();
+    const auto races = sanitizer.DetectDataRaces();
     if (!races.empty())
-      tracer.PrintDataRaces(std::cout);
-    tracer.PrintTraces(std::cout);
+      sanitizer.PrintDataRaces(std::cout);
+    sanitizer.PrintTraces(std::cout);
     detected_race = !races.empty();
   };
 

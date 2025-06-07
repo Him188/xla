@@ -11,7 +11,7 @@
 #include "tsl/platform/env.h"
 #include "tsl/platform/init_main.h"
 #include "tsl/platform/statusor.h"
-#include "xla/backends/gpu/runtime/concurrency_trace.h"
+#include "xla/backends/gpu/runtime/thunk_sanitizer.h"
 #include "xla/debug_options_flags.h"
 #include "xla/hlo/testlib/verified_hlo_module.h"
 #include "xla/mlir/utils/error_util.h"
@@ -19,8 +19,8 @@
 #include "xla/pjrt/gpu/se_gpu_pjrt_client.h"
 #include "xla/pjrt/pjrt_client.h"
 #include "xla/service/hlo_module_config.h"
-#include "xla/tests/concurrency_trace/trace_stats.h"
 #include "xla/tests/concurrency_trace/perf_utils.h"
+#include "xla/tests/concurrency_trace/trace_stats.h"
 #include "xla/tests/test_utils.h"
 
 #include <cstdio>
@@ -160,9 +160,9 @@ absl::Status Run() {
     exec_args.emplace_back(v);
 
   ExecuteOptions exec_opts;
-  gpu::ConcurrencyTracer tracer;
+  gpu::ThunkSanitizer tracer;
   if (enable_trace)
-    exec_opts.gpu_concurrency_tracer = &tracer;
+    exec_opts.gpu_thunk_sanitizer = &tracer;
 
   size_t rss_before_exec = GetCurrentRSSBytes();
   absl::Time t2 = absl::Now();

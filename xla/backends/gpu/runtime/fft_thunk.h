@@ -85,7 +85,7 @@ class FftThunk : public Thunk {
   const BufferAllocation::Slice& output_buffer() const { return output_buffer_; }
 
  private:
-  friend class ConcurrencyTracer;
+  friend class ThunkSanitizer;
   const se::fft::Type fft_type_;
   const std::vector<int64_t> fft_length_;
 

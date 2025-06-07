@@ -220,7 +220,7 @@ Thunk::ExecuteParams Thunk::ExecuteParams::CloneWithNewAllocations(
       params.mock_collectives,
       params.requires_exclusive_lock_on_gpu,
       params.synthetic_bug_options,
-      params.concurrency_tracer);
+      params.thunk_sanitizer);
 }
 
 Thunk::ExecuteParams::ExecuteParams(
@@ -235,7 +235,7 @@ Thunk::ExecuteParams::ExecuteParams(
     ExecutionStreamIdMap additional_compute_streams, bool mock_collectives,
     bool requires_exclusive_lock_on_gpu,
     const SyntheticBugOptions* synthetic_bug_options,
-    ConcurrencyTracer* concurrency_tracer)
+    ThunkSanitizer* concurrency_tracer)
     : buffer_allocations(buffer_allocations),
       stream(stream),
       command_buffer_trace_stream(command_buffer_trace_stream),
@@ -250,7 +250,7 @@ Thunk::ExecuteParams::ExecuteParams(
       mock_collectives(mock_collectives),
       requires_exclusive_lock_on_gpu(requires_exclusive_lock_on_gpu),
       synthetic_bug_options(synthetic_bug_options),
-      concurrency_tracer(concurrency_tracer) {}
+      thunk_sanitizer(concurrency_tracer) {}
 
 //===----------------------------------------------------------------------===//
 

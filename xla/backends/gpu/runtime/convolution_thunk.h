@@ -63,7 +63,7 @@ class ConvolutionThunk : public Thunk {
   const BufferAllocation::Slice& scratch_buffer() const { return scratch_buffer_; }
 
  private:
-  friend class ConcurrencyTracer;
+  friend class ThunkSanitizer;
   std::vector<BufferAllocation::Slice> operand_buffers_;
   std::vector<BufferAllocation::Slice> result_buffers_;
   BufferAllocation::Slice scratch_buffer_;
@@ -102,7 +102,7 @@ class ConvolutionReorderThunk : public Thunk {
   static se::dnn::FilterDescriptor CreateFilterDescriptor(
       absl::Span<int64_t> filter_nchw);
 
-  friend class ConcurrencyTracer;
+  friend class ThunkSanitizer;
 
   const se::dnn::FilterDescriptor filter_descriptor_;
   absl::InlinedVector<BufferAllocation::Slice, 2> operand_buffers_;

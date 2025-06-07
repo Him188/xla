@@ -55,7 +55,7 @@ limitations under the License.
 #include "xla/stream_executor/stream_executor.h"
 
 namespace xla::gpu {
-class ConcurrencyTracer;
+class ThunkSanitizer;
 }
 namespace stream_executor::gpu {
 
@@ -143,11 +143,11 @@ class CudaExecutor : public GpuExecutor {
   absl::StatusOr<std::unique_ptr<MemoryAllocator>> CreateMemoryAllocator(
       MemoryType type) override;
 
-  void SetConcurrencyTracer(xla::gpu::ConcurrencyTracer* concurrency_tracer) {
+  void SetConcurrencyTracer(xla::gpu::ThunkSanitizer* concurrency_tracer) {
     concurrency_tracer_ = concurrency_tracer;
   }
 
-  xla::gpu::ConcurrencyTracer* concurrency_tracer() const {
+  xla::gpu::ThunkSanitizer* concurrency_tracer() const {
     return concurrency_tracer_;
   }
 
@@ -229,7 +229,7 @@ class CudaExecutor : public GpuExecutor {
   // CudaContext for this device.
   CudaContext* cuda_context_;
 
-  xla::gpu::ConcurrencyTracer* concurrency_tracer_;
+  xla::gpu::ThunkSanitizer* concurrency_tracer_;
 };
 
 }  // namespace stream_executor::gpu

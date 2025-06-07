@@ -1,4 +1,4 @@
-#include "concurrency_trace.h"
+#include "thunk_sanitizer.h"
 
 #include <iostream>
 #include <utility>
@@ -40,10 +40,10 @@ static const stream_executor::gpu::CudaEvent& AssertCuda(
 
 constexpr bool ENABLE_LOGS = false;
 
-ConcurrencyTracer::ConcurrencyTracer() = default;
-ConcurrencyTracer::~ConcurrencyTracer() = default;
+ThunkSanitizer::ThunkSanitizer() = default;
+ThunkSanitizer::~ThunkSanitizer() = default;
 
-void ConcurrencyTracer::AddBufferRead(StreamId stream_id, const Buffer& buffer,
+void ThunkSanitizer::AddBufferRead(StreamId stream_id, const Buffer& buffer,
                                       SourceInfo source) {
   std::lock_guard lock(mutex_);
   VectorClock vc = stream_clock_[stream_id];
@@ -51,7 +51,7 @@ void ConcurrencyTracer::AddBufferRead(StreamId stream_id, const Buffer& buffer,
   trace_.push_back(std::make_unique<BufferRead>(vc, stream_id, buffer, source));
 }
 
-void ConcurrencyTracer::AddBufferWrite(StreamId stream_id, const Buffer& buffer,
+void ThunkSanitizer::AddBufferWrite(StreamId stream_id, const Buffer& buffer,
                                        SourceInfo source) {
   std::lock_guard lock(mutex_);
   VectorClock vc = stream_clock_[stream_id];
@@ -59,7 +59,7 @@ void ConcurrencyTracer::AddBufferWrite(StreamId stream_id, const Buffer& buffer,
   trace_.push_back(std::make_unique<BufferWrite>(vc, stream_id, buffer, source));
 }
 
-void ConcurrencyTracer::AddAsyncBufferRead(StreamId source_stream_id,
+void ThunkSanitizer::AddAsyncBufferRead(StreamId source_stream_id,
                                            StreamId async_stream_id,
                                            EventId event_id, const Buffer& buffer,
                                            SourceInfo source) {
@@ -72,7 +72,7 @@ void ConcurrencyTracer::AddAsyncBufferRead(StreamId source_stream_id,
                                                     buffer, source));
 }
 
-void ConcurrencyTracer::AddAsyncBufferWrite(StreamId source_stream_id,
+void ThunkSanitizer::AddAsyncBufferWrite(StreamId source_stream_id,
                                             StreamId async_stream_id,
                                             EventId event_id,
                                             const Buffer& buffer,
@@ -86,7 +86,7 @@ void ConcurrencyTracer::AddAsyncBufferWrite(StreamId source_stream_id,
                                                      buffer, source));
 }
 
-void ConcurrencyTracer::AddEventRecord(StreamId stream_id, EventId event_id) {
+void ThunkSanitizer::AddEventRecord(StreamId stream_id, EventId event_id) {
   std::lock_guard lock(mutex_);
   VectorClock vc = stream_clock_[stream_id];
   event_clock_[event_id] = vc;
@@ -94,14 +94,14 @@ void ConcurrencyTracer::AddEventRecord(StreamId stream_id, EventId event_id) {
   trace_.push_back(std::make_unique<EventRecord>(vc, stream_id, event_id));
 }
 
-void ConcurrencyTracer::AddWaitForEvent(StreamId stream_id, EventId event_id) {
+void ThunkSanitizer::AddWaitForEvent(StreamId stream_id, EventId event_id) {
   std::lock_guard lock(mutex_);
   JoinStream(stream_id, event_clock_[event_id]);
   VectorClock vc = stream_clock_[stream_id];
   AdvanceStream(stream_id);
   trace_.push_back(std::make_unique<WaitForEvent>(vc, stream_id, event_id));
 }
-void ConcurrencyTracer::RecordAsyncBufferAccesses(
+void ThunkSanitizer::RecordAsyncBufferAccesses(
     const absl::Span<const NcclCollectiveThunk::Buffer> buffers,
     const stream_executor::Event* const event,
     const Thunk::ExecuteParams& params, const stream_executor::Stream* stream,
@@ -127,7 +127,7 @@ void ConcurrencyTracer::RecordAsyncBufferAccesses(
                         Buffer{device_ordinal, buf.destination_buffer}, source);
   }
 }
-void ConcurrencyTracer::RecordSyncBufferAccesses(
+void ThunkSanitizer::RecordSyncBufferAccesses(
     const absl::Span<const NcclCollectiveThunk::Buffer> buffers,
     const stream_executor::Stream* stream, const int device_ordinal,
     SourceInfo source) {
@@ -138,7 +138,7 @@ void ConcurrencyTracer::RecordSyncBufferAccesses(
                    Buffer{device_ordinal, buf.destination_buffer}, source);
   }
 }
-void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
+void ThunkSanitizer::OnThunkLaunch(const Thunk& thunk,
                                       const Thunk::ExecuteParams& params) {
 #define THUNK_CASE(type)                             \
   const auto* t = dynamic_cast<const type*>(&thunk); \
@@ -352,7 +352,7 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
 
 /* ----------------------------- Stream events ------------------------------ */
 
-void ConcurrencyTracer::OnStreamEventRecord(const se::Stream& stream,
+void ThunkSanitizer::OnStreamEventRecord(const se::Stream& stream,
                                             const se::Event& event) {
   if (ENABLE_LOGS) {
     std::cout << "[Stream] S_" << stream.GetName() << " recorded "
@@ -363,7 +363,7 @@ void ConcurrencyTracer::OnStreamEventRecord(const se::Stream& stream,
                  static_cast<void*>(AssertCuda(&event).GetHandle()));
 }
 
-void ConcurrencyTracer::OnStreamEventWait(const se::Stream& stream,
+void ThunkSanitizer::OnStreamEventWait(const se::Stream& stream,
                                           const se::Event& event) {
   if (ENABLE_LOGS) {
     std::cout << "[Stream] E_" << AssertCuda(event).GetHandle() << " -> "
@@ -374,7 +374,7 @@ void ConcurrencyTracer::OnStreamEventWait(const se::Stream& stream,
                   static_cast<void*>(AssertCuda(&event).GetHandle()));
 }
 
-void ConcurrencyTracer::PrintTraces(std::ostream& os) const {
+void ThunkSanitizer::PrintTraces(std::ostream& os) const {
   // Protect the trace_ vector while we read from it.
   std::lock_guard lock(mutex_);
 
@@ -435,7 +435,7 @@ void ConcurrencyTracer::PrintTraces(std::ostream& os) const {
   os.flags(old_flags);
 }
 
-size_t ConcurrencyTracer::GetApproximateMemoryUsage() const {
+size_t ThunkSanitizer::GetApproximateMemoryUsage() const {
   std::lock_guard lock(mutex_);
   size_t bytes =
       sizeof(*this) + trace_.capacity() * sizeof(std::unique_ptr<Trace>);
@@ -459,7 +459,7 @@ size_t ConcurrencyTracer::GetApproximateMemoryUsage() const {
   return bytes;
 }
 
-ConcurrencyTracer::TraceStats ConcurrencyTracer::GetTraceStats() const {
+ThunkSanitizer::TraceStats ThunkSanitizer::GetTraceStats() const {
   std::lock_guard lock(mutex_);
   TraceStats stats;
   absl::flat_hash_set<StreamId> streams;
@@ -489,12 +489,12 @@ ConcurrencyTracer::TraceStats ConcurrencyTracer::GetTraceStats() const {
   stats.unique_streams = streams.size();
   return stats;
 }
-bool ConcurrencyTracer::Buffer::operator==(const Buffer& another) const {
+bool ThunkSanitizer::Buffer::operator==(const Buffer& another) const {
   if (device_ordinal != another.device_ordinal) return false;
   if (slice != another.slice) return false;
   return true;
 }
-bool ConcurrencyTracer::Buffer::Overlaps(const Buffer& another) const {
+bool ThunkSanitizer::Buffer::Overlaps(const Buffer& another) const {
   if (device_ordinal != another.device_ordinal) return false;
   if (slice.allocation() != another.slice.allocation()) return false;
   const uint64_t a_begin = slice.offset();
@@ -503,7 +503,7 @@ bool ConcurrencyTracer::Buffer::Overlaps(const Buffer& another) const {
   const uint64_t b_end = b_begin + another.slice.size();
   return a_begin < b_end && b_begin < a_end;
 }
-std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
+std::vector<ThunkSanitizer::DataRace> ThunkSanitizer::DetectDataRaces()
     const {
   std::lock_guard lock(mutex_);
 
@@ -576,7 +576,7 @@ std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
 }
 
 std::ostream& operator<<(std::ostream& os,
-                         const ConcurrencyTracer::SourceInfo& source) {
+                         const ThunkSanitizer::SourceInfo& source) {
   if (source.thunk) {
     os << source.thunk->profile_annotation();
   } else {
@@ -592,7 +592,7 @@ std::ostream& operator<<(std::ostream& os,
   return os;
 }
 
-void ConcurrencyTracer::PrintDataRaces(std::ostream& os) const {
+void ThunkSanitizer::PrintDataRaces(std::ostream& os) const {
   const auto races = DetectDataRaces();
   if (races.empty()) {
     os << "✅  No data-races detected in this execution.\n";
@@ -617,7 +617,7 @@ void ConcurrencyTracer::PrintDataRaces(std::ostream& os) const {
   os << std::dec;
 }
 
-ConcurrencyTracer::EdgeList ConcurrencyTracer::BuildHappensBeforeGraph() const {
+ThunkSanitizer::EdgeList ThunkSanitizer::BuildHappensBeforeGraph() const {
   EdgeList hb;
   auto add_edge = [&](const size_t a, const size_t b) { hb[a].insert(b); };
 
@@ -720,7 +720,7 @@ ConcurrencyTracer::EdgeList ConcurrencyTracer::BuildHappensBeforeGraph() const {
 
   return hb;
 }
-void ConcurrencyTracer::PrintDot(const EdgeList& graph, std::ostream& out) {
+void ThunkSanitizer::PrintDot(const EdgeList& graph, std::ostream& out) {
   // Header and optional global attributes
   out << "digraph {\n"
       << "  rankdir=LR;\n";  // left-to-right layout (nice for timelines)

@@ -3,8 +3,8 @@
 
 #include <iosfwd>
 
-#include "xla/backends/gpu/runtime/concurrency_trace.h"
 #include "xla/backends/gpu/runtime/executable_stats.h"
+#include "xla/backends/gpu/runtime/thunk_sanitizer.h"
 
 namespace xla {
 
@@ -21,7 +21,7 @@ struct RunPerfStats {
 // Prints JSON describing the trace statistics and executable statistics
 // collected from a run. `indent` controls the number of spaces used for
 // indentation before the "trace_stats" key.
-void PrintTraceAndExecutableStatsJson(const gpu::ConcurrencyTracer::TraceStats &trace_stats, const gpu::ExecutableStats &exec_stats, std::ostream &os,
+void PrintTraceAndExecutableStatsJson(const gpu::ThunkSanitizer::TraceStats &trace_stats, const gpu::ExecutableStats &exec_stats, std::ostream &os,
                                       int indent = 2);
 
 // Prints JSON describing run performance statistics.

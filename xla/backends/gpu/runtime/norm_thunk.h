@@ -63,7 +63,7 @@ class NormThunk : public Thunk {
   const BufferAllocation::Slice& scratch_buffer() const { return scratch_buffer_; }
 
  private:
-  friend class ConcurrencyTracer;
+  friend class ThunkSanitizer;
   BufferAllocation::Slice x_buffer_;
   BufferAllocation::Slice scale_buffer_;
   BufferAllocation::Slice y_or_dx_buffer_;

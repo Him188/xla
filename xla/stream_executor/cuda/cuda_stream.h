@@ -40,7 +40,7 @@ limitations under the License.
 #include "xla/stream_executor/stream_common.h"
 
 namespace xla::gpu {
-class ConcurrencyTracer;
+class ThunkSanitizer;
 }
 namespace stream_executor {
 namespace gpu {
@@ -84,7 +84,7 @@ class CudaStream : public StreamCommon {
   CUstream stream_handle() const { return stream_handle_; }
 
   void SetConcurrencyTracer(
-      xla::gpu::ConcurrencyTracer* concurrency_tracer) {
+      xla::gpu::ThunkSanitizer* concurrency_tracer) {
     concurrency_tracer_ = concurrency_tracer;
   }
 
@@ -112,7 +112,7 @@ class CudaStream : public StreamCommon {
   bool no_pending_host_callbacks_ ABSL_GUARDED_BY(mutex_) = true;
   std::atomic<int> num_pending_host_callbacks_ = 0;
 
-  xla::gpu::ConcurrencyTracer* concurrency_tracer_ = nullptr;
+  xla::gpu::ThunkSanitizer* concurrency_tracer_ = nullptr;
 };
 }  // namespace gpu
 

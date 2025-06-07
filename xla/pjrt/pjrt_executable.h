@@ -264,7 +264,7 @@ struct ExecuteOptions {
   ExecutionProfile* execution_profile = nullptr;
 
   gpu::SyntheticBugOptions gpu_synthetic_bug_options{};
-  gpu::ConcurrencyTracer* gpu_concurrency_tracer = nullptr;
+  gpu::ThunkSanitizer* gpu_thunk_sanitizer = nullptr;
 
   // A set of indices denoting the input buffers that should not be donated.
   // An input buffer may be non-donable, for example, if it is referenced more

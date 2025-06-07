@@ -62,7 +62,7 @@ class CholeskyThunk : public Thunk {
   const BufferAllocation::Slice& info_buffer() const { return info_buffer_; }
 
  private:
-  friend class ConcurrencyTracer;
+  friend class ThunkSanitizer;
   se::blas::UpperLower uplo_;
 
   const BufferAllocation::Slice a_buffer_;

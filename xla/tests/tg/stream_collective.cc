@@ -1,5 +1,5 @@
 #include "test_util.h"
-#include "xla/backends/gpu/runtime/concurrency_trace.h"
+#include "xla/backends/gpu/runtime/thunk_sanitizer.h"
 #include "xla/hlo/builder/lib/arithmetic.h"
 #include "xla/hlo/builder/xla_builder.h"
 #include "xla/tsl/lib/core/status_test_util.h"
@@ -112,10 +112,10 @@ TEST(PJRTReplicasTest, DotAllReduceTwoReplicas) {
   // Execute.
   // -------------------------------------------------------------------------
 
-  gpu::ConcurrencyTracer tracer;
+  gpu::ThunkSanitizer tracer;
 
   ExecuteOptions execute_options;
-  execute_options.gpu_concurrency_tracer = &tracer;
+  execute_options.gpu_thunk_sanitizer = &tracer;
   TF_ASSERT_OK_AND_ASSIGN(auto outputs, compile_for_device(0)->Execute(args, /*options=*/execute_options));
 
   // Each replica returns a tuple with one element (the reduced matrix).
@@ -287,9 +287,9 @@ TEST(GpuSpmd, AddReduceTwoWay) {
     };
 
     // ---------------- execute & verify ----------------------------------- //
-    gpu::ConcurrencyTracer tracer;
+    gpu::ThunkSanitizer tracer;
     ExecuteOptions exec_opts;
-    exec_opts.gpu_concurrency_tracer = &tracer;
+    exec_opts.gpu_thunk_sanitizer = &tracer;
     exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
     auto outs = exe->Execute(args, exec_opts).value();
 
@@ -531,9 +531,9 @@ TEST(GpuSpmd, AllScatterBug) {
     };
 
     // ---------------- execute & verify ----------------------------------- //
-    gpu::ConcurrencyTracer tracer;
+    gpu::ThunkSanitizer tracer;
     ExecuteOptions exec_opts;
-    exec_opts.gpu_concurrency_tracer = &tracer;
+    exec_opts.gpu_thunk_sanitizer = &tracer;
     exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = false;
 
     if (round_number == 0) {

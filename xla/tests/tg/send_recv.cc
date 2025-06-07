@@ -1,5 +1,5 @@
 #include "test_util.h"
-#include "xla/backends/gpu/runtime/concurrency_trace.h"
+#include "xla/backends/gpu/runtime/thunk_sanitizer.h"
 #include "xla/hlo/builder/lib/arithmetic.h"
 #include "xla/hlo/builder/xla_builder.h"
 #include "xla/tsl/lib/core/status_test_util.h"
@@ -80,9 +80,9 @@ TEST(GpuSpmd, SendRecv) {
   auto buffer_src = xla_test_util::CreateDeviceBuffer(*pjrt, host, PayloadShape(), kSrcDevice);
 
   // 6.  Concurrency tracer hook
-  gpu::ConcurrencyTracer tracer;
+  gpu::ThunkSanitizer tracer;
   ExecuteOptions exec_opts;
-  exec_opts.gpu_concurrency_tracer = &tracer;
+  exec_opts.gpu_thunk_sanitizer = &tracer;
 
   // 7.  run sender (GPU-0)
   xla_test_util::compile_and_execute(stream_client, sender_comp, {{buffer_src.get()}}, sender_opts, exec_opts);
