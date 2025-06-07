@@ -17,7 +17,7 @@ void PrintPerfStatsJson(const RunPerfStats &perf_stats, std::ostream &os,
   os << indent_inner << "\"tracer_memory_usage_bytes\": " << perf_stats.tracer_memory_usage_bytes << ",\n";
   os << indent_inner << "\"race_detection_time_ms\": " << perf_stats.race_detection_time_ms << ",\n";
   os << indent_inner << "\"races\": " << perf_stats.races << "\n";
-  os << indent_str << "},";
+  os << indent_str << "}";
 }
 
 void PrintTraceAndExecutableStatsJson(const gpu::ConcurrencyTracer::TraceStats &trace_stats, const gpu::ExecutableStats &exec_stats, std::ostream &os,
