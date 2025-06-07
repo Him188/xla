@@ -4,6 +4,7 @@
 #include "nccl_all_reduce_thunk.h"
 #include "thunk.h"
 #include <string>
+#include <vector>
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 
@@ -71,6 +72,21 @@ class ConcurrencyTracer {
     bool operator==(const Buffer& another) const;
     bool operator!=(const Buffer& another) const { return !(*this == another); }
     bool Overlaps(const Buffer& another) const;  // true if byte-ranges overlap
+  };
+
+  struct BufferHandle final {
+    int device_ordinal;
+    BufferAllocation::Index allocation_index;
+
+    bool operator==(const BufferHandle& other) const {
+      return device_ordinal == other.device_ordinal &&
+             allocation_index == other.allocation_index;
+    }
+
+    template <typename H>
+    friend H AbslHashValue(H h, const BufferHandle& b) {
+      return H::combine(std::move(h), b.device_ordinal, b.allocation_index);
+    }
   };
 
   struct MemAccessInfo final {

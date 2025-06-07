@@ -325,22 +325,35 @@ std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
   /* ── Collect every memory access (sync + async) ───────────────────── */
   std::vector<MemAccessInfo> acc;
   acc.reserve(trace_.size());
+  absl::flat_hash_map<BufferHandle, std::vector<size_t>> by_buffer;
 
   for (size_t i = 0; i < trace_.size(); ++i) {
     if (auto* r = dynamic_cast<const BufferRead*>(trace_[i].get()); r) {
       acc.push_back({r->stream_id, r->buffer, AccessKind::kRead, i, r->source});
+      by_buffer[{r->buffer.device_ordinal,
+                 r->buffer.slice.allocation()->index()}]
+          .push_back(acc.size() - 1);
     } else if (auto* w = dynamic_cast<const BufferWrite*>(trace_[i].get()); w) {
       acc.push_back(
           {w->stream_id, w->buffer, AccessKind::kWrite, i, w->source});
+      by_buffer[{w->buffer.device_ordinal,
+                 w->buffer.slice.allocation()->index()}]
+          .push_back(acc.size() - 1);
     } else if (auto* ar = dynamic_cast<const AsyncBufferRead*>(trace_[i].get());
                ar) {
       acc.push_back({ar->async_stream_id, ar->buffer, AccessKind::kRead, i,
                      ar->source, ar->completion_event_id});
+      by_buffer[{ar->buffer.device_ordinal,
+                 ar->buffer.slice.allocation()->index()}]
+          .push_back(acc.size() - 1);
     } else if (auto* aw =
                    dynamic_cast<const AsyncBufferWrite*>(trace_[i].get());
                aw) {
       acc.push_back({aw->async_stream_id, aw->buffer, AccessKind::kWrite, i,
                      aw->source, aw->completion_event_id});
+      by_buffer[{aw->buffer.device_ordinal,
+                 aw->buffer.slice.allocation()->index()}]
+          .push_back(acc.size() - 1);
     }
   }
 
@@ -362,19 +375,32 @@ std::vector<ConcurrencyTracer::DataRace> ConcurrencyTracer::DetectDataRaces()
     return false;
   };
 
-  /* ── Pair-wise race detection ─────────────────────────────────────── */
+  /* ── Race detection using per-buffer index ────────────────────────── */
   std::vector<DataRace> races;
-  for (size_t i = 0; i < acc.size(); ++i) {
-    for (size_t j = i + 1; j < acc.size(); ++j) {
-      const auto& A = acc[i];
-      const auto& B = acc[j];
+  for (const auto& [handle, indices] : by_buffer) {
+    std::vector<size_t> active;
+    for (size_t idx : indices) {
+      const auto& cur = acc[idx];
 
-      if (A.stream_id == B.stream_id) continue;     // same (virtual) stream
-      if (!A.buffer.Overlaps(B.buffer)) continue;   // no overlap
-      if (!(A.IsWrite() || B.IsWrite())) continue;  // read–read is safe
-      if (!happens_before(A.trace_idx, B.trace_idx) &&
-          !happens_before(B.trace_idx, A.trace_idx))
-        races.push_back({A, B});
+      std::vector<size_t> next_active;
+      for (size_t prev_idx : active) {
+        const auto& prev = acc[prev_idx];
+
+        if (happens_before(prev.trace_idx, cur.trace_idx)) {
+          continue;  // ordered by HB
+        }
+        next_active.push_back(prev_idx);
+
+        if (prev.stream_id == cur.stream_id) continue;
+        if (!prev.buffer.Overlaps(cur.buffer)) continue;
+        if (!(prev.IsWrite() || cur.IsWrite())) continue;
+        if (!happens_before(prev.trace_idx, cur.trace_idx) &&
+            !happens_before(cur.trace_idx, prev.trace_idx)) {
+          races.push_back({prev, cur});
+        }
+      }
+      active.swap(next_active);
+      active.push_back(idx);
     }
   }
   return races;
