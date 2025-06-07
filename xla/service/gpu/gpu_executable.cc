@@ -342,24 +342,24 @@ absl::Status ExecuteThunks(
         RendezvousAfterInitialization(run_options, debug_options));
   }
 
-  // Assign names and ConcurrencyTracer for the streams
+  // Assign names and ThunkSanitizer for the streams
 
-  const auto concurrency_tracer =
-      run_options->run_options().gpu_concurrency_tracer();
+  const auto sanitizer =
+      run_options->run_options().gpu_thunk_sanitizer();
 
   const auto set_tracer = [&](se::Stream* stream) {
     if (auto* cuda_stream =
             dynamic_cast<stream_executor::gpu::CudaStream*>(stream)) {
-      cuda_stream->SetConcurrencyTracer(concurrency_tracer);
+      cuda_stream->SetThunkSanitizer(sanitizer);
     } else {
-      cuda_stream->SetConcurrencyTracer(nullptr);
+      cuda_stream->SetThunkSanitizer(nullptr);
     }
   };
 
   const auto reset_tracer = [&](se::Stream* stream) {
     if (auto* cuda_stream =
             dynamic_cast<stream_executor::gpu::CudaStream*>(stream)) {
-      cuda_stream->SetConcurrencyTracer(nullptr);
+      cuda_stream->SetThunkSanitizer(nullptr);
     }
   };
 
@@ -391,7 +391,7 @@ absl::Status ExecuteThunks(
   const auto stream_executor = execute_params.stream->parent();
   if (const auto cuda_executor =
           dynamic_cast<stream_executor::gpu::CudaExecutor*>(stream_executor)) {
-    cuda_executor->SetConcurrencyTracer(execute_params.thunk_sanitizer);
+    cuda_executor->SetThunkSanitizer(execute_params.thunk_sanitizer);
   }
   TF_RETURN_IF_ERROR(thunk_sequence.ExecuteOnStream(execute_params));
 
@@ -408,7 +408,7 @@ absl::Status ExecuteThunks(
   }
   if (const auto cuda_executor =
           dynamic_cast<stream_executor::gpu::CudaExecutor*>(stream_executor)) {
-    cuda_executor->SetConcurrencyTracer(nullptr);
+    cuda_executor->SetThunkSanitizer(nullptr);
   }
 
   return MaybeSyncAndProfile(run_options, execution_timer.get(),

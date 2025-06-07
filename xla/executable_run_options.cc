@@ -189,13 +189,13 @@ const gpu::SyntheticBugOptions* ExecutableRunOptions::gpu_synthetic_bug_options(
   return gpu_synthetic_bug_options_;
 }
 
-ExecutableRunOptions& ExecutableRunOptions::set_gpu_concurrency_tracer(
-    gpu::ThunkSanitizer* tracer) {
-  gpu_concurrency_tracer_ = tracer;
+ExecutableRunOptions& ExecutableRunOptions::set_gpu_thunk_sanitizer(
+    gpu::ThunkSanitizer* sanitizer) {
+  gpu_thunk_sanitizer_ = sanitizer;
   return *this;
 }
-gpu::ThunkSanitizer* ExecutableRunOptions::gpu_concurrency_tracer() const {
-  return gpu_concurrency_tracer_;
+gpu::ThunkSanitizer* ExecutableRunOptions::gpu_thunk_sanitizer() const {
+  return gpu_thunk_sanitizer_;
 }
 
 }  // namespace xla

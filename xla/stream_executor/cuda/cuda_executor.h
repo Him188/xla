@@ -143,12 +143,12 @@ class CudaExecutor : public GpuExecutor {
   absl::StatusOr<std::unique_ptr<MemoryAllocator>> CreateMemoryAllocator(
       MemoryType type) override;
 
-  void SetConcurrencyTracer(xla::gpu::ThunkSanitizer* concurrency_tracer) {
-    concurrency_tracer_ = concurrency_tracer;
+  void SetThunkSanitizer(xla::gpu::ThunkSanitizer* thunk_sanitizer) {
+    thunk_sanitizer_ = thunk_sanitizer;
   }
 
-  xla::gpu::ThunkSanitizer* concurrency_tracer() const {
-    return concurrency_tracer_;
+  xla::gpu::ThunkSanitizer* thunk_sanitizer() const {
+    return thunk_sanitizer_;
   }
 
  private:
@@ -229,7 +229,7 @@ class CudaExecutor : public GpuExecutor {
   // CudaContext for this device.
   CudaContext* cuda_context_;
 
-  xla::gpu::ThunkSanitizer* concurrency_tracer_;
+  xla::gpu::ThunkSanitizer* thunk_sanitizer_;
 };
 
 }  // namespace stream_executor::gpu

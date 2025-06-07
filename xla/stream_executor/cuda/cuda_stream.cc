@@ -217,7 +217,7 @@ absl::Status CudaStream::WaitFor(Stream* other) {
   //
   // std::cout << "->" << "S_" << this->GetName() << std::endl;
 
-  if (const auto tracer = concurrency_tracer_) {
+  if (const auto tracer = thunk_sanitizer_) {
     tracer->OnStreamEventWait(*this, other_stream->completed_event_);
   }
 
@@ -226,7 +226,7 @@ absl::Status CudaStream::WaitFor(Stream* other) {
 }
 
 absl::Status CudaStream::RecordEvent(Event* event) {
-  if (const auto tracer = concurrency_tracer_) {
+  if (const auto tracer = thunk_sanitizer_) {
     tracer->OnStreamEventRecord(*this, *event);
   }
 
@@ -236,7 +236,7 @@ absl::Status CudaStream::RecordEvent(Event* event) {
 }
 
 absl::Status CudaStream::WaitFor(Event* event) {
-  if (const auto tracer = concurrency_tracer_) {
+  if (const auto tracer = thunk_sanitizer_) {
     tracer->OnStreamEventWait(*this, *event);
   }
 

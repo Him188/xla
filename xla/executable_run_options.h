@@ -260,9 +260,9 @@ class ExecutableRunOptions {
       const gpu::SyntheticBugOptions* options);
   const gpu::SyntheticBugOptions* gpu_synthetic_bug_options() const;
 
-  ExecutableRunOptions& set_gpu_concurrency_tracer(
-      gpu::ThunkSanitizer* tracer);
-  gpu::ThunkSanitizer* gpu_concurrency_tracer() const;
+  ExecutableRunOptions& set_gpu_thunk_sanitizer(
+      gpu::ThunkSanitizer* sanitizer);
+  gpu::ThunkSanitizer* gpu_thunk_sanitizer() const;
 
  private:
   stream_executor::DeviceMemoryAllocator* allocator_ = nullptr;
@@ -285,7 +285,7 @@ class ExecutableRunOptions {
   const gpu::GpuExecutableRunOptions* gpu_executable_run_options_ = nullptr;
   const ffi::ExecutionContext* ffi_execution_context_ = nullptr;
   const gpu::SyntheticBugOptions* gpu_synthetic_bug_options_ = nullptr;
-  gpu::ThunkSanitizer* gpu_concurrency_tracer_ = nullptr;
+  gpu::ThunkSanitizer* gpu_thunk_sanitizer_ = nullptr;
 };
 
 }  // namespace xla

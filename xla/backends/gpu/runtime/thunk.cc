@@ -205,7 +205,7 @@ Thunk::ExecuteParams Thunk::ExecuteParams::Create(
                                  ->requires_exclusive_lock_on_gpu()
                            : false,
                           run_options.run_options().gpu_synthetic_bug_options(),
-                       run_options.run_options().gpu_concurrency_tracer());
+                       run_options.run_options().gpu_thunk_sanitizer());
 }
 
 Thunk::ExecuteParams Thunk::ExecuteParams::CloneWithNewAllocations(

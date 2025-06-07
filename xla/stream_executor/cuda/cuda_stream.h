@@ -83,9 +83,9 @@ class CudaStream : public StreamCommon {
 
   CUstream stream_handle() const { return stream_handle_; }
 
-  void SetConcurrencyTracer(
-      xla::gpu::ThunkSanitizer* concurrency_tracer) {
-    concurrency_tracer_ = concurrency_tracer;
+  void SetThunkSanitizer(
+      xla::gpu::ThunkSanitizer* thunk_sanitizer) {
+    thunk_sanitizer_ = thunk_sanitizer;
   }
 
  private:
@@ -112,7 +112,7 @@ class CudaStream : public StreamCommon {
   bool no_pending_host_callbacks_ ABSL_GUARDED_BY(mutex_) = true;
   std::atomic<int> num_pending_host_callbacks_ = 0;
 
-  xla::gpu::ThunkSanitizer* concurrency_tracer_ = nullptr;
+  xla::gpu::ThunkSanitizer* thunk_sanitizer_ = nullptr;
 };
 }  // namespace gpu
 
