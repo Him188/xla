@@ -198,11 +198,13 @@ absl::Status Run() {
       perf.races = races.size();
 
       std::ostringstream os;
+      os << "### BEGIN_PERFORMANCE_STATS ###\n";
       os << "{\n";
       PrintPerfStatsJson(perf, os, 2);
       os << ",\n";
       PrintTraceAndExecutableStatsJson(tracer.GetTraceStats(), *exec_stats_or, os, 2);
-      os << "}";
+      os << "}\n";
+      os << "### END_PERFORMANCE_STATS ###" << std::endl;
       std::cout << os.str() << std::endl;
     }
   }
