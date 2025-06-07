@@ -51,7 +51,19 @@ class NormThunk : public Thunk {
   absl::Status ExecuteOnStream(const ExecuteParams& params) override;
   absl::Status Initialize(const InitializeParams& params) override;
 
+  const BufferAllocation::Slice& x_buffer() const { return x_buffer_; }
+  const BufferAllocation::Slice& scale_buffer() const { return scale_buffer_; }
+  const BufferAllocation::Slice& y_or_dx_buffer() const { return y_or_dx_buffer_; }
+  const std::optional<BufferAllocation::Slice>& bias_buffer() const { return bias_buffer_; }
+  const std::optional<BufferAllocation::Slice>& expectation_buffer() const { return expectation_buffer_; }
+  const std::optional<BufferAllocation::Slice>& norm_factor_buffer() const { return norm_factor_buffer_; }
+  const std::optional<BufferAllocation::Slice>& dy_buffer() const { return dy_buffer_; }
+  const std::optional<BufferAllocation::Slice>& dscale_buffer() const { return dscale_buffer_; }
+  const std::optional<BufferAllocation::Slice>& dbias_buffer() const { return dbias_buffer_; }
+  const BufferAllocation::Slice& scratch_buffer() const { return scratch_buffer_; }
+
  private:
+  friend class ConcurrencyTracer;
   BufferAllocation::Slice x_buffer_;
   BufferAllocation::Slice scale_buffer_;
   BufferAllocation::Slice y_or_dx_buffer_;

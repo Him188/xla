@@ -7,6 +7,13 @@
 #include "copy_thunk.h"
 #include "gemm_thunk.h"
 #include "kernel_thunk.h"
+#include "memset_thunk.h"
+#include "fft_thunk.h"
+#include "gpublas_lt_matmul_thunk.h"
+#include "convolution_thunk.h"
+#include "triangular_solve_thunk.h"
+#include "cholesky_thunk.h"
+#include "norm_thunk.h"
 #include "nccl_all_reduce_thunk.h"
 #include "nccl_collective_permute_thunk.h"
 #include "xla/stream_executor/cuda/cuda_event.h"
@@ -178,6 +185,128 @@ void ConcurrencyTracer::OnThunkLaunch(const Thunk& thunk,
                   Buffer{device_ordinal, t->source()}, source);
     AddBufferWrite(stream->platform_specific_handle().stream,
                    Buffer{device_ordinal, t->destination()}, source);
+
+  } else if (THUNK_CASE(gpu::MemzeroThunk)) {
+    AddBufferWrite(stream->platform_specific_handle().stream,
+                   Buffer{device_ordinal, t->destination()}, source);
+
+  } else if (THUNK_CASE(gpu::Memset32BitValueThunk)) {
+    AddBufferWrite(stream->platform_specific_handle().stream,
+                   Buffer{device_ordinal, t->destination()}, source);
+
+  } else if (THUNK_CASE(gpu::FftThunk)) {
+    AddBufferRead(stream->platform_specific_handle().stream,
+                  Buffer{device_ordinal, t->input_buffer()}, source);
+    AddBufferWrite(stream->platform_specific_handle().stream,
+                   Buffer{device_ordinal, t->output_buffer()}, source);
+
+  } else if (THUNK_CASE(gpu::ConvolutionThunk)) {
+    for (auto buf : t->operand_buffers())
+      AddBufferRead(stream->platform_specific_handle().stream,
+                    Buffer{device_ordinal, buf}, source);
+    for (auto buf : t->result_buffers())
+      AddBufferWrite(stream->platform_specific_handle().stream,
+                     Buffer{device_ordinal, buf}, source);
+    if (t->scratch_buffer().size() != 0)
+      AddBufferWrite(stream->platform_specific_handle().stream,
+                     Buffer{device_ordinal, t->scratch_buffer()}, source);
+
+  } else if (THUNK_CASE(gpu::ConvolutionReorderThunk)) {
+    for (auto buf : t->operand_buffers())
+      AddBufferRead(stream->platform_specific_handle().stream,
+                    Buffer{device_ordinal, buf}, source);
+    for (auto buf : t->result_buffers())
+      AddBufferWrite(stream->platform_specific_handle().stream,
+                     Buffer{device_ordinal, buf}, source);
+
+  } else if (THUNK_CASE(gpu::CublasLtMatmulThunk)) {
+    AddBufferRead(stream->platform_specific_handle().stream,
+                  Buffer{device_ordinal, t->a_buffer()}, source);
+    AddBufferRead(stream->platform_specific_handle().stream,
+                  Buffer{device_ordinal, t->b_buffer()}, source);
+    if (t->c_buffer().allocation() != nullptr)
+      AddBufferRead(stream->platform_specific_handle().stream,
+                    Buffer{device_ordinal, t->c_buffer()}, source);
+    AddBufferWrite(stream->platform_specific_handle().stream,
+                   Buffer{device_ordinal, t->d_buffer()}, source);
+    if (t->bias_buffer().allocation() != nullptr)
+      AddBufferRead(stream->platform_specific_handle().stream,
+                    Buffer{device_ordinal, t->bias_buffer()}, source);
+    if (t->aux_buffer().allocation() != nullptr)
+      AddBufferRead(stream->platform_specific_handle().stream,
+                    Buffer{device_ordinal, t->aux_buffer()}, source);
+    if (t->a_scale_buffer().allocation() != nullptr)
+      AddBufferRead(stream->platform_specific_handle().stream,
+                    Buffer{device_ordinal, t->a_scale_buffer()}, source);
+    if (t->b_scale_buffer().allocation() != nullptr)
+      AddBufferRead(stream->platform_specific_handle().stream,
+                    Buffer{device_ordinal, t->b_scale_buffer()}, source);
+    if (t->c_scale_buffer().allocation() != nullptr)
+      AddBufferRead(stream->platform_specific_handle().stream,
+                    Buffer{device_ordinal, t->c_scale_buffer()}, source);
+    if (t->d_scale_buffer().allocation() != nullptr)
+      AddBufferRead(stream->platform_specific_handle().stream,
+                    Buffer{device_ordinal, t->d_scale_buffer()}, source);
+    if (t->d_amax_buffer().allocation() != nullptr)
+      AddBufferWrite(stream->platform_specific_handle().stream,
+                     Buffer{device_ordinal, t->d_amax_buffer()}, source);
+    if (t->workspace())
+      AddBufferWrite(stream->platform_specific_handle().stream,
+                     Buffer{device_ordinal, *t->workspace()}, source);
+
+  } else if (THUNK_CASE(gpu::TriangularSolveThunk)) {
+    AddBufferRead(stream->platform_specific_handle().stream,
+                  Buffer{device_ordinal, t->a_buffer()}, source);
+    AddBufferRead(stream->platform_specific_handle().stream,
+                  Buffer{device_ordinal, t->b_buffer()}, source);
+    AddBufferWrite(stream->platform_specific_handle().stream,
+                   Buffer{device_ordinal, t->b_buffer()}, source);
+    AddBufferWrite(stream->platform_specific_handle().stream,
+                   Buffer{device_ordinal, t->temp_buffer()}, source);
+
+  } else if (THUNK_CASE(gpu::CholeskyThunk)) {
+    AddBufferRead(stream->platform_specific_handle().stream,
+                  Buffer{device_ordinal, t->a_buffer()}, source);
+    AddBufferWrite(stream->platform_specific_handle().stream,
+                   Buffer{device_ordinal, t->a_buffer()}, source);
+    AddBufferWrite(stream->platform_specific_handle().stream,
+                   Buffer{device_ordinal, t->workspace_buffer()}, source);
+    AddBufferWrite(stream->platform_specific_handle().stream,
+                   Buffer{device_ordinal, t->info_buffer()}, source);
+
+  } else if (THUNK_CASE(gpu::NormThunk)) {
+    AddBufferRead(stream->platform_specific_handle().stream,
+                  Buffer{device_ordinal, t->x_buffer()}, source);
+    AddBufferRead(stream->platform_specific_handle().stream,
+                  Buffer{device_ordinal, t->scale_buffer()}, source);
+    AddBufferWrite(stream->platform_specific_handle().stream,
+                   Buffer{device_ordinal, t->y_or_dx_buffer()}, source);
+    if (t->bias_buffer())
+      AddBufferRead(stream->platform_specific_handle().stream,
+                    Buffer{device_ordinal, *t->bias_buffer()}, source);
+    if (t->expectation_buffer()) {
+      AddBufferRead(stream->platform_specific_handle().stream,
+                    Buffer{device_ordinal, *t->expectation_buffer()}, source);
+      AddBufferWrite(stream->platform_specific_handle().stream,
+                     Buffer{device_ordinal, *t->expectation_buffer()}, source);
+    }
+    if (t->norm_factor_buffer()) {
+      AddBufferRead(stream->platform_specific_handle().stream,
+                    Buffer{device_ordinal, *t->norm_factor_buffer()}, source);
+      AddBufferWrite(stream->platform_specific_handle().stream,
+                     Buffer{device_ordinal, *t->norm_factor_buffer()}, source);
+    }
+    if (t->dy_buffer())
+      AddBufferRead(stream->platform_specific_handle().stream,
+                    Buffer{device_ordinal, *t->dy_buffer()}, source);
+    if (t->dscale_buffer())
+      AddBufferWrite(stream->platform_specific_handle().stream,
+                     Buffer{device_ordinal, *t->dscale_buffer()}, source);
+    if (t->dbias_buffer())
+      AddBufferWrite(stream->platform_specific_handle().stream,
+                     Buffer{device_ordinal, *t->dbias_buffer()}, source);
+    AddBufferWrite(stream->platform_specific_handle().stream,
+                   Buffer{device_ordinal, t->scratch_buffer()}, source);
 
     /* -------------------------- NCCL collective ⇩ ---------------------------
      */

@@ -49,7 +49,12 @@ class TriangularSolveThunk : public Thunk {
 
   absl::Status ExecuteOnStream(const ExecuteParams& params) override;
 
+  const BufferAllocation::Slice& a_buffer() const { return a_buffer_; }
+  const BufferAllocation::Slice& b_buffer() const { return b_buffer_; }
+  const BufferAllocation::Slice& temp_buffer() const { return temp_buffer_; }
+
  private:
+  friend class ConcurrencyTracer;
   const se::blas::UpperLower uplo_;
   const se::blas::Side side_;
   const se::blas::Diagonal unit_diagonal_;

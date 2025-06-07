@@ -81,7 +81,11 @@ class FftThunk : public Thunk {
   // Does the FFT for the thunk on "stream".
   absl::Status ExecuteOnStream(const ExecuteParams& params) override;
 
+  const BufferAllocation::Slice& input_buffer() const { return input_buffer_; }
+  const BufferAllocation::Slice& output_buffer() const { return output_buffer_; }
+
  private:
+  friend class ConcurrencyTracer;
   const se::fft::Type fft_type_;
   const std::vector<int64_t> fft_length_;
 

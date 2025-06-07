@@ -54,7 +54,16 @@ class ConvolutionThunk : public Thunk {
 
   absl::Status ExecuteOnStream(const ExecuteParams& params) override;
 
+  const std::vector<BufferAllocation::Slice>& operand_buffers() const {
+    return operand_buffers_;
+  }
+  const std::vector<BufferAllocation::Slice>& result_buffers() const {
+    return result_buffers_;
+  }
+  const BufferAllocation::Slice& scratch_buffer() const { return scratch_buffer_; }
+
  private:
+  friend class ConcurrencyTracer;
   std::vector<BufferAllocation::Slice> operand_buffers_;
   std::vector<BufferAllocation::Slice> result_buffers_;
   BufferAllocation::Slice scratch_buffer_;
@@ -82,9 +91,18 @@ class ConvolutionReorderThunk : public Thunk {
 
   absl::Status ExecuteOnStream(const ExecuteParams& params) override;
 
+  const absl::InlinedVector<BufferAllocation::Slice, 2>& operand_buffers() const {
+    return operand_buffers_;
+  }
+  const absl::InlinedVector<BufferAllocation::Slice, 2>& result_buffers() const {
+    return result_buffers_;
+  }
+
  private:
   static se::dnn::FilterDescriptor CreateFilterDescriptor(
       absl::Span<int64_t> filter_nchw);
+
+  friend class ConcurrencyTracer;
 
   const se::dnn::FilterDescriptor filter_descriptor_;
   absl::InlinedVector<BufferAllocation::Slice, 2> operand_buffers_;

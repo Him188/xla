@@ -57,7 +57,12 @@ class CholeskyThunk : public Thunk {
 
   absl::Status ExecuteOnStream(const ExecuteParams& params) override;
 
+  const BufferAllocation::Slice& a_buffer() const { return a_buffer_; }
+  const BufferAllocation::Slice& workspace_buffer() const { return workspace_buffer_; }
+  const BufferAllocation::Slice& info_buffer() const { return info_buffer_; }
+
  private:
+  friend class ConcurrencyTracer;
   se::blas::UpperLower uplo_;
 
   const BufferAllocation::Slice a_buffer_;
