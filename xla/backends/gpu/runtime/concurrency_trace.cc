@@ -455,7 +455,6 @@ size_t ConcurrencyTracer::GetApproximateMemoryUsage() const {
     } else {
       bytes += sizeof(Trace);
     }
-    bytes += p->source.instruction.capacity();
   }
   return bytes;
 }

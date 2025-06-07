@@ -454,7 +454,7 @@ class Thunk {
   absl::string_view profile_annotation() const { return profile_annotation_; }
 
   // Returns the string representation of the source HloInstruction. May be empty if tracing is disabled.
-  std::string_view source_instruction() const { return source_instruction_; }
+  absl::string_view source_instruction() const { return source_instruction_; }
 
   // Prepares thunk for execution.
   //

@@ -4,6 +4,7 @@
 #include "nccl_all_reduce_thunk.h"
 #include "thunk.h"
 #include <string>
+#include "absl/strings/string_view.h"
 #include <vector>
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
@@ -77,9 +78,9 @@ class ConcurrencyTracer {
 
   struct SourceInfo final {
     const Thunk* thunk = nullptr;
-    const std::string instruction;
+    absl::string_view instruction;
 
-    SourceInfo(const Thunk* thunk, const std::string& instruction)
+    SourceInfo(const Thunk* thunk, const absl::string_view instruction)
         : thunk(thunk), instruction(instruction) {}
     explicit SourceInfo(const Thunk* thunk)
         : thunk(thunk), instruction(thunk->source_instruction()) {}
