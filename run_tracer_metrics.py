@@ -16,13 +16,20 @@
 """Collects tracer performance metrics for StableHLO files.
 
 This script walks through the ``modelgarden/nlp/stablehlo`` directory,
-invokes ``tracer_perf_main`` for each ``.stablehlo`` file with tracing
-both disabled and enabled, and stores the extracted JSON metrics and
-command logs in a mirrored directory tree under ``modelgarden/nlp/metrics``.
+invokes ``tracer_perf_main`` for each ``.stablehlo`` file and stores the
+extracted JSON metrics and command logs in a mirrored directory tree
+under ``modelgarden/nlp/metrics``.
+
+The script can also be run in *synthetic bug* mode using ``--synthetic-bugs``.
+When enabled, flags are passed to ``tracer_perf_main`` to activate
+synthetic bugs used for testing the concurrency tracer.  Individual
+synthetic bugs can be toggled with ``--bug-wait-for-streams``,
+``--bug-collective-done`` and ``--bug-remove-control-deps``.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import logging
@@ -39,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 STABLEHLO_ROOT = Path("modelgarden/nlp/stablehlo")
 METRICS_ROOT = Path("modelgarden/nlp/metrics")
+BUG_METRICS_ROOT = METRICS_ROOT / "synthetic"
 
 
 def extract_json(output: str) -> dict:
@@ -80,14 +88,42 @@ def run_and_capture(cmd: list[str], log_file: Path) -> subprocess.CompletedProce
     return proc
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Collect tracer metrics")
+    parser.add_argument(
+        "--synthetic-bugs",
+        action="store_true",
+        help="Enable synthetic bug testing mode",
+    )
+    parser.add_argument(
+        "--bug-wait-for-streams",
+        action="store_true",
+        help="Enable the wait_for_streams_thunk synthetic bug",
+    )
+    parser.add_argument(
+        "--bug-collective-done",
+        action="store_true",
+        help="Enable the nccl_collective_done_thunk synthetic bug",
+    )
+    parser.add_argument(
+        "--bug-remove-control-deps",
+        action="store_true",
+        help="Enable synthetic removal of collective control deps",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     logger.info("Starting tracer performance collection")
+
+    metrics_root = BUG_METRICS_ROOT if args.synthetic_bugs else METRICS_ROOT
 
     for batch_dir in sorted(STABLEHLO_ROOT.glob("*_*")):
         if not batch_dir.is_dir():
             continue
         logger.info("Processing batch directory: %s", batch_dir)
-        metrics_dir = METRICS_ROOT / batch_dir.name
+        metrics_dir = metrics_root / batch_dir.name
         metrics_dir.mkdir(parents=True, exist_ok=True)
 
         for hlo in batch_dir.glob("*.stablehlo"):
@@ -108,6 +144,13 @@ def main() -> None:
                         f"--input={hlo}",
                         f"--trace={trace}",
                     ]
+                    if args.synthetic_bugs:
+                        if args.bug_wait_for_streams:
+                            cmd.append("--bug_wait_for_streams=1")
+                        if args.bug_collective_done:
+                            cmd.append("--bug_collective_done=1")
+                        if args.bug_remove_control_deps:
+                            cmd.append("--bug_remove_control_deps=1")
                     logger.debug("Running command: %s", ' '.join(cmd))
 
                     proc = run_and_capture(cmd, log_file)

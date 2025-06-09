@@ -34,6 +34,12 @@ ABSL_FLAG(std::string, input, "", "Path to HLO or StableHLO file");
 ABSL_FLAG(bool, stablehlo, false, "Input file is StableHLO (MLIR) format");
 ABSL_FLAG(bool, trace, true, "Enable concurrency tracer");
 ABSL_FLAG(int, replicas, 2, "Number of replicas");
+ABSL_FLAG(bool, bug_wait_for_streams, false,
+          "Enable synthetic wait_for_streams_thunk bug");
+ABSL_FLAG(bool, bug_collective_done, false,
+          "Enable synthetic nccl_collective_done_thunk bug");
+ABSL_FLAG(bool, bug_remove_control_deps, false,
+          "Enable synthetic removal of collective control deps");
 
 namespace xla {
 
@@ -93,10 +99,17 @@ absl::Status Run() {
   bool use_stablehlo = absl::GetFlag(FLAGS_stablehlo);
   bool enable_trace = absl::GetFlag(FLAGS_trace);
   int num_replicas = absl::GetFlag(FLAGS_replicas);
+  bool bug_wait_for_streams = absl::GetFlag(FLAGS_bug_wait_for_streams);
+  bool bug_collective_done = absl::GetFlag(FLAGS_bug_collective_done);
+  bool bug_remove_control_deps = absl::GetFlag(FLAGS_bug_remove_control_deps);
 
   std::cout << "Using input file: " << path << std::endl;
   std::cout << "enable_trace: " << enable_trace << std::endl;
   std::cout << "num_replicas: " << num_replicas << std::endl;
+  std::cout << "bug_wait_for_streams: " << bug_wait_for_streams << std::endl;
+  std::cout << "bug_collective_done: " << bug_collective_done << std::endl;
+  std::cout << "bug_remove_control_deps: " << bug_remove_control_deps
+            << std::endl;
 
   std::string text;
   TF_RETURN_IF_ERROR(tsl::ReadFileToString(tsl::Env::Default(), path, &text));
@@ -111,6 +124,8 @@ absl::Status Run() {
   eb.set_device_assignment(device_assignment);
   DebugOptions debug = DefaultDebugOptionsIgnoringFlags();
   debug.set_xla_gpu_enable_latency_hiding_scheduler(true);
+  debug.set_xla_latency_hiding_scheduler_synthetic_remove_control_deps(
+      bug_remove_control_deps);
   *eb.mutable_debug_options() = debug;
 
   std::unique_ptr<PjRtLoadedExecutable> executable;
@@ -163,6 +178,10 @@ absl::Status Run() {
   gpu::ThunkSanitizer tracer;
   if (enable_trace)
     exec_opts.gpu_thunk_sanitizer = &tracer;
+  exec_opts.gpu_synthetic_bug_options.wait_for_streams_thunk =
+      bug_wait_for_streams;
+  exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk =
+      bug_collective_done;
 
   size_t rss_before_exec = GetCurrentRSSBytes();
   absl::Time t2 = absl::Now();
