@@ -128,6 +128,10 @@ def main() -> None:
     run_indexes = range(1, 2) if args.synthetic_bugs else range(1, 4)
 
     for batch_dir in sorted(STABLEHLO_ROOT.glob("*_*")):
+        if args.synthetic_bugs:
+            if batch_dir.name != '16_256': # save time
+                continue
+
         if not batch_dir.is_dir():
             continue
         logger.info("Processing batch directory: %s", batch_dir)
