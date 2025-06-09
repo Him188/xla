@@ -8,7 +8,9 @@
 #include "xla/mlir/utils/error_util.h"
 #include "xla/tests/test_utils.h"
 #include "xla/tests/concurrency_trace/perf_utils.h"
+#include "tsl/platform/logging.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -194,11 +196,31 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
       return mean_std_err(tmp);
     };
 
+    auto median = [](std::vector<double> vals) {
+      CHECK(!vals.empty());
+      std::sort(vals.begin(), vals.end());
+      size_t mid = vals.size() / 2;
+      if (vals.size() % 2 == 0)
+        return (vals[mid - 1] + vals[mid]) / 2.0;
+      return vals[mid];
+    };
+
+    auto median_size = [&median](const std::vector<size_t> &vals) {
+      std::vector<double> tmp(vals.begin(), vals.end());
+      return median(tmp);
+    };
+
     auto [base_mean, base_err] = mean_std_err(base_times);
     auto [base_mem_mean, base_mem_err] = mean_std_err_size(base_memory);
     auto [traced_mean, traced_err] = mean_std_err(traced_times);
     auto [traced_mem_mean, traced_mem_err] = mean_std_err_size(traced_memory);
     auto [tracer_mem_mean, tracer_mem_err] = mean_std_err_size(tracer_memory);
+
+    double base_median = median(base_times);
+    double base_mem_median = median_size(base_memory);
+    double traced_median = median(traced_times);
+    double traced_mem_median = median_size(traced_memory);
+    double tracer_mem_median = median_size(tracer_memory);
 
     std::ostringstream os;
     os << "{\n";
@@ -208,7 +230,9 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
     os << "    \"avg_execution_time_ms\": " << base_mean << ",\n";
     os << "    \"stderr_execution_time_ms\": " << base_err << ",\n";
     os << "    \"avg_memory_delta_bytes\": " << base_mem_mean << ",\n";
-    os << "    \"stderr_memory_delta_bytes\": " << base_mem_err << "\n";
+    os << "    \"stderr_memory_delta_bytes\": " << base_mem_err << ",\n";
+    os << "    \"median_execution_time_ms\": " << base_median << ",\n";
+    os << "    \"median_memory_delta_bytes\": " << base_mem_median << "\n";
     os << "  },\n";
     os << "  \"traced\": {\n";
     os << "    \"avg_execution_time_ms\": " << traced_mean << ",\n";
@@ -216,7 +240,10 @@ void BaseConcurrencyTests::RunTest(std::string_view hlo_string, bool expect_race
     os << "    \"avg_memory_delta_bytes\": " << traced_mem_mean << ",\n";
     os << "    \"stderr_memory_delta_bytes\": " << traced_mem_err << ",\n";
     os << "    \"avg_tracer_memory_usage_bytes\": " << tracer_mem_mean << ",\n";
-    os << "    \"stderr_tracer_memory_usage_bytes\": " << tracer_mem_err << "\n";
+    os << "    \"stderr_tracer_memory_usage_bytes\": " << tracer_mem_err << ",\n";
+    os << "    \"median_execution_time_ms\": " << traced_median << ",\n";
+    os << "    \"median_memory_delta_bytes\": " << traced_mem_median << ",\n";
+    os << "    \"median_tracer_memory_usage_bytes\": " << tracer_mem_median << "\n";
     os << "  },\n";
     PrintTraceAndExecutableStatsJson(trace_stats, exec_stats, os, 2);
     os << "}";
