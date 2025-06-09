@@ -50,7 +50,7 @@ protected:
 
   static size_t GetCurrentRSSBytes();
 
-  void RunTest(std::string_view hlo_string, bool expect_race, int warmup_iters = 3, int measure_iters = 3);
+  void RunTest(std::string_view hlo_string, bool expect_race, int warmup_iters = 10, int measure_iters = 100);
 
   absl::StatusOr<ExeWithModule> CompileWithModule(std::string_view hlo_string, const DeviceMesh &mesh, DebugOptions *debug_options = nullptr);
 
