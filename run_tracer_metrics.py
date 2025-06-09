@@ -125,11 +125,12 @@ def main() -> None:
     elif args.bug_wait_for_streams:
         metrics_root = metrics_root / "wait_for_streams"
 
-    run_indexes = range(1, 2) if args.synthetic_bugs else range(1, 4)
+    run_indexes = range(1, 2) if args.synthetic_bugs else range(1, 6)
+    trace_enable_states = (1,) if args.synthetic_bugs else (0, 1)
 
     for batch_dir in sorted(STABLEHLO_ROOT.glob("*_*")):
         if args.synthetic_bugs:
-            if batch_dir.name != '16_256': # save time
+            if batch_dir.name != '1_1': # save time
                 continue
 
         if not batch_dir.is_dir():
@@ -141,7 +142,7 @@ def main() -> None:
         for hlo in batch_dir.glob("*.stablehlo"):
             task_name = hlo.stem
             logger.info("Processing HLO file: %s", hlo)
-            for trace in (0, 1):
+            for trace in trace_enable_states:
                 for run_idx in run_indexes:
                     out_file = metrics_dir / f"{task_name}-trace{trace}.{run_idx}.json"
                     log_file = metrics_dir / f"{task_name}-trace{trace}.{run_idx}.log"

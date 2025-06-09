@@ -122,11 +122,18 @@ absl::Status Run() {
   eb.set_num_partitions(1);
   TF_ASSIGN_OR_RETURN(const auto device_assignment, client->GetDefaultDeviceAssignment(num_replicas, 1));
   eb.set_device_assignment(device_assignment);
-  DebugOptions debug = DefaultDebugOptionsIgnoringFlags();
+  DebugOptions &debug = *eb.mutable_debug_options();
   debug.set_xla_gpu_enable_latency_hiding_scheduler(true);
+  debug.set_xla_gpu_enable_pipelined_collectives(true);
+  debug.set_xla_gpu_enable_pipelined_all_reduce(true);
+  debug.set_xla_gpu_copy_insertion_use_region_analysis(true);
+  debug.clear_xla_gpu_enable_command_buffer();
+  debug.add_xla_gpu_enable_command_buffer(DebugOptions_CommandBufferCmdType_INVALID);
   debug.set_xla_latency_hiding_scheduler_synthetic_remove_control_deps(
       bug_remove_control_deps);
-  *eb.mutable_debug_options() = debug;
+  if (bug_wait_for_streams) {
+    debug.set_xla_gpu_async_dot(true);
+  }
 
   std::unique_ptr<PjRtLoadedExecutable> executable;
   absl::Time t0 = absl::Now();
