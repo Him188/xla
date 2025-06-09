@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 STABLEHLO_ROOT = Path("modelgarden/nlp/stablehlo")
 METRICS_ROOT = Path("modelgarden/nlp/metrics")
-BUG_METRICS_ROOT = METRICS_ROOT / "synthetic"
+BUG_METRICS_ROOT = METRICS_ROOT / "../synthetic"
 
 
 def extract_json(output: str) -> dict:
@@ -118,6 +118,14 @@ def main() -> None:
     logger.info("Starting tracer performance collection")
 
     metrics_root = BUG_METRICS_ROOT if args.synthetic_bugs else METRICS_ROOT
+    if args.bug_remove_control_deps:
+        metrics_root = metrics_root / "remove_control_deps"
+    elif args.bug_collective_done:
+        metrics_root = metrics_root / "collective_done"
+    elif args.bug_wait_for_streams:
+        metrics_root = metrics_root / "wait_for_streams"
+
+    run_indexes = range(1, 2) if args.synthetic_bugs else range(1, 4)
 
     for batch_dir in sorted(STABLEHLO_ROOT.glob("*_*")):
         if not batch_dir.is_dir():
@@ -130,7 +138,7 @@ def main() -> None:
             task_name = hlo.stem
             logger.info("Processing HLO file: %s", hlo)
             for trace in (0, 1):
-                for run_idx in range(1, 4):
+                for run_idx in run_indexes:
                     out_file = metrics_dir / f"{task_name}-trace{trace}.{run_idx}.json"
                     log_file = metrics_dir / f"{task_name}-trace{trace}.{run_idx}.log"
 
