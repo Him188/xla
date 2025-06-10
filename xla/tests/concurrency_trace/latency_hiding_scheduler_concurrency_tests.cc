@@ -37,6 +37,84 @@ namespace xla {
 
 class LatencyHidingSchedulerConcurrencyTests : public BaseConcurrencyTests {};
 
+// To print statistics
+XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllScatterBugSingle) {
+  setenv("NCCL_DEBUG", "WARN", 1);
+
+  std::string dumpDir = ::testing::TempDir() + "/xla_dump";
+  std::filesystem::create_directory(dumpDir);
+  xla_test_util::SetXlaDumpFlags(dumpDir);
+
+  ASSERT_GE(client().addressable_devices().size(), 2) << "Need at least two visible CUDA devices.";
+
+  const auto hlo_string = R"(
+HloModule module_with_counter
+
+while_cond {
+  param = (bf16[8]{0}, bf16[8]{0}, s32[]) parameter(0)
+  iters = s32[] get-tuple-element(param), index=2
+  zero = s32[] constant(0)
+  ROOT keep_going = pred[] compare(iters, zero), direction=GT
+}
+
+while_body {
+  param = (bf16[8]{0}, bf16[8]{0}, s32[]) parameter(0)
+  A_in = bf16[8]{0} get-tuple-element(param), index=0
+  bitcast = bf16[8]{0} bitcast(A_in)
+  cp1 = bf16[8]{0} collective-permute(A_in), source_target_pairs={{0,1},{1,0}}
+  add0 = bf16[8]{0} add(cp1, bitcast)
+  neg = bf16[8]{0} negate(add0)
+  cp2 = bf16[8]{0} collective-permute(cp1), source_target_pairs={{1,0},{0,1}}
+  iters_in = s32[] get-tuple-element(param), index=2
+  one = s32[] constant(1)
+  iters_next = s32[] subtract(iters_in, one)
+  ROOT tuple = (bf16[8]{0}, bf16[8]{0}, s32[]) tuple(cp2, neg, iters_next)
+}
+
+ENTRY entry {
+  p0 = bf16[8]{0} parameter(0)
+  p1 = bf16[8]{0} parameter(1)
+  p2 = s32[] parameter(2)
+  init_state = (bf16[8]{0}, bf16[8]{0}, s32[]) tuple(p0, p1, p2)
+  loop_state = (bf16[8]{0}, bf16[8]{0}, s32[]) while(init_state), condition=while_cond, body=while_body
+  A_final = bf16[8]{0} get-tuple-element(loop_state), index=0
+  B_final = bf16[8]{0} get-tuple-element(loop_state), index=1
+  ROOT out = bf16[8]{0} add(A_final, B_final)
+}
+)";
+  Literal mat = LiteralUtil::CreateFull({8}, static_cast<bfloat16>(1.0f));
+  Literal pred = LiteralUtil::CreateR0<int>(1);
+
+  auto run_and_check = [&](const bool enable_bug_collective_done, const bool enable_bug_control, bool &detected_race) {
+    DebugOptions debug_options = GetDebugOptionsForTest();
+    if (enable_bug_control) {
+      debug_options.set_xla_latency_hiding_scheduler_synthetic_remove_control_deps(true);
+    }
+    TF_ASSERT_OK_AND_ASSIGN(auto exe_with_module, CompileWithModule(hlo_string, {2, 1}, &debug_options));
+    auto &exe = exe_with_module.first;
+    xla_test_util::print_gpu_thunk_info(exe.get());
+
+    gpu::ThunkSanitizer sanitizer;
+    ExecuteOptions exec_opts;
+    exec_opts.gpu_thunk_sanitizer = &sanitizer;
+    exec_opts.gpu_synthetic_bug_options.nccl_collective_done_thunk = enable_bug_collective_done;
+
+    TF_ASSERT_OK_AND_ASSIGN(const auto outs, Execute(*exe, {{mat, mat, pred}, {mat, mat, pred}}, exec_opts));
+    (void)outs;
+
+    const auto races = sanitizer.DetectDataRaces();
+    if (!races.empty())
+      sanitizer.PrintDataRaces(std::cout);
+    sanitizer.PrintTraces(std::cout);
+    detected_race = !races.empty();
+    std::cout << "Races: " << races.size() << std::endl << std::flush;
+    xla_test_util::PrintIrDumps(dumpDir, {xla_test_util::IRDumpKind::kHLO});
+  };
+
+  bool detected = false;
+  run_and_check(false, true, detected);
+}
+
 XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllScatterBug) {
   setenv("NCCL_DEBUG", "WARN", 1);
 
