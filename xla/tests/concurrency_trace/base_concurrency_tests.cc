@@ -26,6 +26,7 @@ DebugOptions BaseConcurrencyTests::GetDebugOptionsForTest() const {
   dbg.set_xla_gpu_enable_latency_hiding_scheduler(true);
   dbg.set_xla_gpu_enable_pipelined_collectives(true);
   dbg.set_xla_gpu_enable_pipelined_all_reduce(true);
+  dbg.set_xla_gpu_enable_pipelined_reduce_scatter(true);
   dbg.set_xla_gpu_copy_insertion_use_region_analysis(true);
   dbg.clear_xla_gpu_enable_command_buffer();
   dbg.add_xla_gpu_enable_command_buffer(DebugOptions_CommandBufferCmdType_INVALID);
