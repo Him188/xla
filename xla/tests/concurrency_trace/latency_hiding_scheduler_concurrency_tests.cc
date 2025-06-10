@@ -108,7 +108,7 @@ ENTRY entry {
   };
 
   // Run without the synthetic bug: should be race free.
-  for (int i = 0; i < 10; ++i) {
+  for (int i = 0; i < 100; ++i) {
     bool detected_race = false;
     run_and_check(false, false, detected_race);
     ASSERT_FALSE(detected_race);
@@ -121,6 +121,7 @@ ENTRY entry {
       {true, true},
   };
 
+  std::vector<int> results;
   for (const auto &[bug1, bug2] : cases) {
     int races = 0;
     for (int i = 0; i < 100; ++i) {
@@ -128,10 +129,16 @@ ENTRY entry {
       run_and_check(bug1, bug2, detected_race);
       if (detected_race) {
         races++;
-        break;
       }
     }
-    ASSERT_GE(races, 0);
+    results.push_back(races);
+  }
+
+  for (int i = 0; i < cases.size(); ++i) {
+    const auto &[bug1, bug2] = cases[i];
+    const int races = results[i];
+
+    std::cout << "Races (" << bug1 << ", " << bug2 << ") " << races << std::endl << std::flush;
   }
 }
 
