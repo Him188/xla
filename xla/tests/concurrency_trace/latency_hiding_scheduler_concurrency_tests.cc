@@ -38,7 +38,7 @@ namespace xla {
 class LatencyHidingSchedulerConcurrencyTests : public BaseConcurrencyTests {};
 
 // To print statistics
-XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllScatterBugSingle) {
+XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileLoopAliasingBugSingle) {
   setenv("NCCL_DEBUG", "WARN", 1);
 
   std::string dumpDir = ::testing::TempDir() + "/xla_dump";
@@ -90,6 +90,9 @@ ENTRY entry {
     if (enable_bug_control) {
       debug_options.set_xla_latency_hiding_scheduler_synthetic_remove_control_deps(true);
     }
+    debug_options.set_xla_dump_hlo_as_text(true);
+    debug_options.set_xla_dump_hlo_as_html(true);
+    debug_options.set_xla_dump_hlo_as_dot(true);
     TF_ASSERT_OK_AND_ASSIGN(auto exe_with_module, CompileWithModule(hlo_string, {2, 1}, &debug_options));
     auto &exe = exe_with_module.first;
     xla_test_util::print_gpu_thunk_info(exe.get());
@@ -108,14 +111,14 @@ ENTRY entry {
     sanitizer.PrintTraces(std::cout);
     detected_race = !races.empty();
     std::cout << "Races: " << races.size() << std::endl << std::flush;
-    xla_test_util::PrintIrDumps(dumpDir, {xla_test_util::IRDumpKind::kHLO});
+    xla_test_util::PrintIrDumps(dumpDir, {xla_test_util::IRDumpKind::kHLO, xla_test_util::IRDumpKind::kHTML, xla_test_util::IRDumpKind::kDOT});
   };
 
   bool detected = false;
   run_and_check(false, true, detected);
 }
 
-XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, AllScatterBug) {
+XLA_TEST_F(LatencyHidingSchedulerConcurrencyTests, WhileLoopAliasingBug) {
   setenv("NCCL_DEBUG", "WARN", 1);
 
   ASSERT_GE(client().addressable_devices().size(), 2) << "Need at least two visible CUDA devices.";
