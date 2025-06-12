@@ -621,10 +621,8 @@ ThunkSanitizer::EdgeList ThunkSanitizer::BuildHappensBeforeGraph() const {
   EdgeList hb;
   auto add_edge = [&](const size_t a, const size_t b) { hb[a].insert(b); };
 
-  /* ────────────────────────────────────────────────────────────────────
-     Pass 0: remember the last op we have seen on every real stream
-             (for program-order edges); also record / wait positions.
-     ──────────────────────────────────────────────────────────────────── */
+  // Pass 0: remember the last op we have seen on every real stream
+  //  for program-order edges; also record / wait positions.
   absl::flat_hash_map<StreamId, size_t> last_seen_on_stream;
   absl::flat_hash_map<const void*, size_t> record_pos;
   absl::flat_hash_map<const void*, std::vector<size_t>> wait_pos;
@@ -670,18 +668,13 @@ ThunkSanitizer::EdgeList ThunkSanitizer::BuildHappensBeforeGraph() const {
     }
   }
 
-  /* ────────────────────────────────────────────────────────────────────
-     Pass 1: event edges  (Record  →  Wait)
-     ──────────────────────────────────────────────────────────────────── */
+  // Pass 1: event edges  (Record -> Wait)
   for (const auto& [ev, rec_i] : record_pos) {
     if (auto it = wait_pos.find(ev); it != wait_pos.end())
       for (const size_t w_i : it->second) add_edge(rec_i, w_i);
   }
 
-  /* ────────────────────────────────────────────────────────────────────
-     Pass 2: async memory-access edges
-             Record → AsyncAccess → Wait   for every access on that event
-     ──────────────────────────────────────────────────────────────────── */
+  // Pass 2: async memory-access edges. Record -> AsyncAccess -> Wait for every access on that event
   for (size_t i = 0; i < trace_.size(); ++i) {
     const void* ev = nullptr;
     StreamId async_stream_id = nullptr;
